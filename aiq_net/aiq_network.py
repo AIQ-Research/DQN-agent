@@ -1,6 +1,6 @@
 import sys
 # add deep_q_rl to the python search path
-sys.path.append('../deep_q_rl/')
+sys.path.append('../deep_q_rl/deep_q_rl/')
 
 from q_network import DeepQLearner
 
@@ -58,3 +58,9 @@ class AIQLearner:
     def build_1H_layer_network(self, input_width, input_height, output_dim,
                              num_frames, batch_size):
         raise("Hasn't been ready yet")
+
+def main():
+    net = AIQLearner(84, 84, 16, 4, .99, 0.95, .00025, .95, .95, 0.1, 10000, 32, 'linear', 'deepmind_rmsprop', 'sum', 12345)
+
+if __name__ == '__main__':
+    main()
