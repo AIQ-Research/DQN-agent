@@ -1,6 +1,4 @@
-import sys
-# add deep_q_rl to the python search path
-sys.path.append('../deep_q_rl/deep_q_rl/')
+__author__ = 'vicident'
 
 from q_network import DeepQLearner
 
@@ -22,6 +20,14 @@ class AIQLearner:
                  batch_size, network_type, update_rule,
                  batch_accumulator, rng, input_scale)
 
+        self.num_frames = self.deep_q_learner.num_frames
+        self.input_width = self.deep_q_learner.input_width
+        self.input_height = self.deep_q_learner.input_height
+        self.lr = self.deep_q_learner.lr
+        self.discount = self.deep_q_learner.discount
+        self.num_actions = self.deep_q_learner.num_actions
+        self.batch_size = self.deep_q_learner.batch_size
+
     def build_network(self, network_type, input_width, input_height,
                       output_dim, num_frames, batch_size):
 
@@ -32,7 +38,6 @@ class AIQLearner:
             raise ValueError("Unrecognized network: {}".format(network_type))
 
     def train(self, states, actions, rewards, next_states, terminals):
-
         return self.deep_q_learner.train(states, actions, rewards, next_states, terminals)
 
     def q_vals(self, state):
@@ -58,9 +63,3 @@ class AIQLearner:
     def build_1H_layer_network(self, input_width, input_height, output_dim,
                              num_frames, batch_size):
         raise("Hasn't been ready yet")
-
-def main():
-    net = AIQLearner(84, 84, 16, 4, .99, 0.95, .00025, .95, .95, 0.1, 10000, 32, 'linear', 'deepmind_rmsprop', 'sum', 12345)
-
-if __name__ == '__main__':
-    main()

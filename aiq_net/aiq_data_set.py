@@ -1,6 +1,5 @@
 __author__ = 'vicident'
 
-import aiq_define
 import ale_data_set
 
 class FDataSet(ale_data_set.DataSet):
