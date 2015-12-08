@@ -1,6 +1,8 @@
 __author__ = 'vicident'
 
-from aiq_net import aiq_network, aiq_agent
+from aiq_net import aiq_network
+from aiq_net.aiq_db import connectors
+from aiq_net.aiq_ale.aiq_ale import FxLocalALE
 from aiq_network import AIQLearner
 from aiq_agent import AIQAgent
 
@@ -31,6 +33,21 @@ def test_aiq_agent():
 
     print agent, 'has finished the GAME'
 
+def test_aiq_db(db_path):
+    db = connectors.SqliteConnector()
+    db.connect(db_path)
+    table_names = db.get_tables()
+    columns = db.get_table_columns(table_names[0])
+    print columns
+    #table = db.read_table(table_names[0])
+    #sub_table = db.read_table_range(table_names[0], columns, 'time', 1389946680000, 1389948120000)
+    #print sub_table
+    db.close()
+
+def test_aiq_ale(db_path):
+    ale = FxLocalALE(db_path)
+    print ale
 
 if __name__ == '__main__':
-    test_aiq_agent()
+    #test_aiq_agent()
+    test_aiq_ale('/home/vicident/Development/AIQ/db/fxpairs.db')

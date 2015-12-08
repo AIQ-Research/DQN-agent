@@ -5,38 +5,50 @@ from aiq_net.interfaces.iagent import IAgent
 from Queue import Queue
 from threading import Lock
 from aiq_net.aiq_define import DEFAULT_START_REWARD
+from aiq_net.aiq_db.connectors import SqliteConnector
+
 import numpy as np
 
 # Two active threads meet here: trainer thread and market listener thread
-class TGEInterface(ILearningEnvironment, IAgent):
+class FxLocalALE(ILearningEnvironment):
 
-    def __init__(self):
-        # Thread-safe queues work as buffers with retrieval
-        self.reward_queue = Queue(1)
-        self.actions_queue = Queue(1)
+    def __init__(self, db_path):
+        self._connect_fx_db_(db_path)
+        self._check_time_periods_()
 
-        # Two threads may have an access to these variables simultaneously
-        self.terminal = False
-        self.observation = None
+    def _connect_fx_db_(self, db_path):
+        self.db = SqliteConnector()
+        self.db.connect(db_path)
 
-        # Mutex for 'terminal' and 'observation'
-        self.lock = Lock()
+    def _check_time_periods_(self):
+        table_names = self.db.get_tables()
+        base_time_column = []
+        base_table_name = ''
+
+        for table_name in table_names:
+            columns = self.db.get_table_columns(table_name)
+
+            if 'time' not in columns:
+                raise Exception("table \'" + table_name + "\' from database \'" + self.db.get_name() +
+                                "\' doesn't have required \'time\' column")
+
+            if not len(base_time_column):
+                base_time_column = self.db.read_table_column(table_name, 'time', 1)
+                base_table_name = table_name
+            else:
+                time_column = self.db.read_table_column(table_name, 'time', 1)
+
+                if not time_column == base_time_column:
+                    raise Exception("tables \'" + base_table_name + "\' and \'" + table_name + "\' are not synchronized")
 
     def load_tge_from_json(self, json):
         pass
 
     def act(self, action):
-        # free 'start_episode' and 'step' methods
-        self.actions_queue.put(action)
-
-        return self.reward_queue.get()
+        pass
 
     def game_over(self):
-        self.lock.acquire()
-        terminal = self.terminal
-        self.lock.release()
-
-        return terminal
+        pass
 
     def reset_game(self):
         # we can't control the market
@@ -49,31 +61,6 @@ class TGEInterface(ILearningEnvironment, IAgent):
     def lives(self): pass
 
     def getScreenGrayscale(self, screen_buffer):
-        self.lock.acquire()
+        pass
         # copy actual frame to buffer
-        np.copyto(screen_buffer, self.observation)
-        self.lock.release()
-
-    def start_episode(self, observation):
-        self.lock.acquire()
-        self.observation = observation
-        self.lock.release()
-        self.reward_queue.put(DEFAULT_START_REWARD)
-
-        return self.actions_queue.get()
-
-    def step(self, reward, observation):
-        self.lock.acquire()
-        self.observation = observation
-        self.lock.release()
-        self.reward_queue.put(reward)
-
-        return self.actions_queue.get()
-
-    def end_episode(self, reward, terminal=True):
-        self.lock.acquire()
-        self.terminal = terminal
-        self.lock.release()
-
-        # free 'act' method
-        self.reward_queue.put(reward)
+        #np.copyto(screen_buffer, self.observation)
