@@ -14,6 +14,7 @@ class AIQExperiment(ALEExperiment):
                  frame_skip, death_ends_episode, max_start_nullops, rng)
 
         # change self.buffer_length and init screen_buffer
+
         self.screen_buffer = np.empty((self.buffer_length,
                                        self.height, self.width),
                                       dtype=floatX)

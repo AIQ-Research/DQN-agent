@@ -3,6 +3,8 @@ __author__ = 'vicident'
 import sqlite3
 from aiq_net.interfaces.idb import IDatabaseConnector
 import os
+import numpy as np
+from ale_data_set import floatX
 
 class SqliteConnector(IDatabaseConnector):
 
@@ -62,6 +64,25 @@ class SqliteConnector(IDatabaseConnector):
             sub_table.append(row)
 
         return sub_table
+
+    def read_table_rows(self, table_name, column_range, first_value, last_value, columns_exclude = []):
+        columns = self.get_table_columns(table_name)
+        columns_read = [x for x in columns if x not in columns_exclude]
+        return self.read_table_range(table_name, columns_read, column_range, first_value, last_value)
+
+    def read_tables_rows(self, column_range, first_value, last_value, columns_exclude = []):
+        tables = self.get_tables()
+        data = None
+        for table_name in tables:
+            data_part = np.asarray(self.read_table_rows(table_name, column_range, first_value, last_value, columns_exclude))
+            n = len(data_part)
+            if data is None and n > 0:
+                data = data_part
+            else:
+                data = np.concatenate((data, data_part), axis=1)
+
+        return np.transpose(data)
+
 
     def get_table_columns(self, table_name):
         self.conn.row_factory = sqlite3.Row

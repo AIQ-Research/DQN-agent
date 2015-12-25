@@ -39,14 +39,15 @@ def test_aiq_db(db_path):
     table_names = db.get_tables()
     columns = db.get_table_columns(table_names[0])
     print columns
-    #table = db.read_table(table_names[0])
-    #sub_table = db.read_table_range(table_names[0], columns, 'time', 1389946680000, 1389948120000)
-    #print sub_table
     db.close()
 
 def test_aiq_ale(db_path):
-    ale = FxLocalALE(db_path)
-    print ale
+    ale = FxLocalALE(db_path, 10)
+    (w, h) = ale.getScreenDims()
+    screen_buffer = np.zeros((w, h), dtype=floatX)
+    ale.fillBuffer(screen_buffer)
+
+    print screen_buffer
 
 if __name__ == '__main__':
     #test_aiq_agent()

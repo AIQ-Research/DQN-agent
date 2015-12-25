@@ -20,10 +20,13 @@ def print_utc_time_intervals(intervals):
 # Two active threads meet here: trainer thread and market listener thread
 class FxLocalALE(ILearningEnvironment):
 
-    def __init__(self, db_path):
+    def __init__(self, db_path, window_wid):
         self._connect_fx_db_(db_path)
         self._check_time_periods_()
-        self._update_time_periods_()
+        self._get_time_intervals_()
+        self._window_wid = window_wid
+        self._time_pointer = 0
+        self._game_over = False
 
     def _connect_fx_db_(self, db_path):
         self.db = SqliteConnector()
@@ -36,6 +39,9 @@ class FxLocalALE(ILearningEnvironment):
 
         if not len(table_names):
             raise Exception("Empty Database")
+
+        # columns - 1 (time column) cross tables amount (should be conformable)
+        self._data_len = ( len(self.db.get_table_columns(table_names[0])) - 1 ) * len(table_names)
 
         for table_name in table_names:
             columns = self.db.get_table_columns(table_name)
@@ -51,15 +57,15 @@ class FxLocalALE(ILearningEnvironment):
                 time_column = self.db.read_table_column(table_name, 'time', 1)
 
                 if not time_column == base_time_column:
-                    raise Exception("tables \'" + base_table_name + "\' and \'" + table_name + "\' are not synchronized")
+                    raise Exception("tables \'" + base_table_name + "\' and \'" + table_name + "\' are not conformable")
 
-    def _update_time_periods_(self):
+    def _get_time_intervals_(self):
         table_names = self.db.get_tables()
 
         # read time from the first table (table index doesn't matter, if _check_time_periods_ has been passed)
-        time_column = self.db.read_table_column(table_names[0], 'time', 1)
+        self._time_column = self.db.read_table_column(table_names[0], 'time', 1)
 
-        np_time_vector = np.array(time_column)
+        np_time_vector = np.array(self._time_column)
         time_diff = np.diff(np_time_vector)
 
         # find base (minimal) period of data changing (MS, SEC, MIN...)
@@ -82,25 +88,44 @@ class FxLocalALE(ILearningEnvironment):
         print_utc_time_intervals(self._time_intervals)
         print "[OK] Time intervals (" + str(len(self._time_intervals)) + ")"
 
-
     def load_tge_from_json(self, json):
         pass
 
     def act(self, action):
-        pass
+        if self._time_pointer < len(self._time_column) - 1:
+            self._time_pointer += 1
+        else:
+            self._game_over = True
 
     def game_over(self):
-        pass
+        return self._game_over
 
     def reset_game(self):
+        self._time_pointer = 0
+        self._game_over = False
+
+    def getMinimalActionSet(self):
         pass
 
-    def getMinimalActionSet(self): pass
+    def getScreenDims(self):
+        return self._data_len, self._window_wid
 
-    def getScreenDims(self): pass
+    def lives(self):
+        pass
 
-    def lives(self): pass
-
-    # write aiq data here
+    # convert wide window to short window
     def getScreenGrayscale(self, screen_buffer):
         pass
+
+    def fillBuffer(self, screen_buffer):
+        (h, w) = screen_buffer.shape
+        assert h == self._data_len and w == self._window_wid
+        screen_buffer[:, :] = self.db.read_tables_rows(
+                "time",
+               self._time_column[self._time_pointer],
+               self._time_column[self._time_pointer] + (self._period * self._window_wid - 1),
+               ["time"])
+
+
+
+

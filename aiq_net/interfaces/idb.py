@@ -28,3 +28,6 @@ class IDatabaseConnector:
 
     @abstractmethod
     def read_table_range(self, table_name, columns_read, column_range, first_value, last_value): pass
+
+    @abstractmethod
+    def read_tables_rows(self, column_range, first_value, last_value, columns_exclude=[]): pass
