@@ -50,4 +50,4 @@ def test_aiq_ale(db_path):
 
 if __name__ == '__main__':
     #test_aiq_agent()
-    test_aiq_ale('/home/vicident/Development/AIQ/db/fxpairs.db')
+    test_aiq_ale('/home/vicident/Development/AIQ/db/fxpairs2012.db')

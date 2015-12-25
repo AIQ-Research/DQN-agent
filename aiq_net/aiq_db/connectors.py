@@ -12,7 +12,11 @@ class SqliteConnector(IDatabaseConnector):
 
     def connect(self, db_path):
         self.conn = sqlite3.connect(db_path)
-        self.name = os.path.basename(db_path)
+        print self.conn
+        if self.conn is not None:
+            self.name = os.path.basename(db_path)
+        else:
+            raise Exception("Can not access database")
 
     def get_name(self):
         return self.name
