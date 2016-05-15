@@ -6,8 +6,13 @@ from collections import namedtuple
 # GMT - Greenwich Mean Time, UK
 # UTC - Coordinated Universal Time
 UTCTimeIntervals = namedtuple('UTCTimeIntervals', 'start_time end_time')
+IntervalSessions = namedtuple('IntervalSessions', 'interval sessions')
 EPOCH = datetime.utcfromtimestamp(0)
 LONDON_TZ = pytz.timezone('Europe/London')
+
+
+def interval_len(interval):
+    return interval.end_time - interval.start_time
 
 
 def datetime_to_ms(dt):
@@ -26,12 +31,16 @@ def is_summer_time(aware_dt):
     return bool(aware_dt.dst())
 
 
-def print_utc_time_intervals(intervals):
-    for i in intervals:
-        start_str = utc_ms_to_str(i.start_time)
-        end_str = utc_ms_to_str(i.end_time)
-        diff = timedelta(milliseconds=(i.end_time - i.start_time))
-        print "[" + start_str + " <-> " + end_str + "]", diff
+def print_utc_time_interval(interval_ms):
+    start_str = utc_ms_to_str(interval_ms.start_time)
+    end_str = utc_ms_to_str(interval_ms.end_time)
+    diff = timedelta(milliseconds=(interval_ms.end_time - interval_ms.start_time))
+    print "[" + start_str + " <-> " + end_str + "]", diff
+
+
+def print_utc_time_intervals(intervals_ms):
+    for i in intervals_ms:
+        print_utc_time_interval(i)
 
 
 def add_day_ignore_daylight(dt, time):
@@ -45,7 +54,7 @@ class MarketSession:
         self._time_begin = time_begin
         self._time_end = time_end
 
-    # UTCTimeIntervals
+    # UTCTimeIntervals, sorted
     def extract_from_interval(self, time_interval_utc):
         sdt = datetime.utcfromtimestamp(time_interval_utc.start_time/1000)
         edt = datetime.utcfromtimestamp(time_interval_utc.end_time/1000)
@@ -57,19 +66,39 @@ class MarketSession:
         if (session_end - session_start).total_seconds() < 0.0:
             session_end += timedelta(days=1)
 
-        intervals = []
+        sessions = []
 
         while (edt - session_end).total_seconds() >= 0.0:
-            intervals.append(
+            sessions.append(
                 UTCTimeIntervals(
                     datetime_to_ms(session_start),
-                    datetime_to_ms(session_end)
+                    datetime_to_ms(session_end) - 1
                 )
             )
             session_start += timedelta(days=1)
             session_end += timedelta(days=1)
 
-        return intervals
+        return sessions
+
+    def extract_from_time_ids(self, time_vector, beg_id, end_id, period_ms):
+        time_interval = UTCTimeIntervals(time_vector[beg_id], time_vector[end_id])
+        sessions_ms = self.extract_from_interval(time_interval)
+        sessions_id = []
+        for sess_ms in sessions_ms:
+            sess_begin_id = int((sess_ms.start_time - time_interval.start_time) / period_ms) + beg_id
+            sess_end_id = int((sess_ms.end_time - time_interval.start_time) / period_ms) + beg_id
+            sessions_id.append([sess_begin_id, sess_end_id])
+        return sessions_id
+
+    # check time point in exact session
+    def check(self, time_utc_ms):
+        dt = datetime.utcfromtimestamp(time_utc_ms/1000)
+        t = time(dt.hour, dt.minute, dt.second, dt.microsecond, dt.tzinfo)
+        if self._time_end > self._time_begin:
+            flag_in = (t >= self._time_begin and t < self._time_end)
+        else:
+            flag_in = (t >= self._time_begin or t < self._time_end)
+        return flag_in
 
 
 # 11:00 PM to 8:00 AM GMT
