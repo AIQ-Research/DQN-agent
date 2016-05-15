@@ -6,8 +6,8 @@ import os
 import numpy as np
 from ale_data_set import floatX
 
-class SqliteConnector(IDatabaseConnector):
 
+class SqliteConnector(IDatabaseConnector):
     def __init__(self):
         self.conn = None
         self.name = None
@@ -53,7 +53,6 @@ class SqliteConnector(IDatabaseConnector):
 
         return column
 
-
     def read_table_range(self, table_name, columns_read, column_range, first_value, last_value):
         sql_str = "SELECT " + reduce(lambda str, elem: str + "," + elem, columns_read) \
                   + " FROM " + table_name \
@@ -83,14 +82,12 @@ class SqliteConnector(IDatabaseConnector):
 
         return np.transpose(data)
 
-
     def get_table_columns(self, table_name):
         self.conn.row_factory = sqlite3.Row
         c = self.conn.cursor()
         c.execute("SELECT * FROM " + table_name)
         r = c.fetchone()
         return r.keys()
-
 
     def close(self):
         self.conn.close()
