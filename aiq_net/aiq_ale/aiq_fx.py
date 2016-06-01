@@ -2,6 +2,7 @@ __author__ = 'vicident'
 import pytz
 from datetime import time, timedelta, datetime, tzinfo
 from collections import namedtuple
+import numpy as np
 
 # GMT - Greenwich Mean Time, UK
 # UTC - Coordinated Universal Time
@@ -124,3 +125,19 @@ class AmericanSession(MarketSession):
 class EASession(MarketSession):
     def __init__(self):
         MarketSession.__init__(self, time(7, 0, 0), time(20, 0, 0))
+
+
+# Session statistics
+class SessionPreprocessing:
+    def __init__(self, fx_buffer):
+        h, w = fx_buffer.shape
+        self._min = np.zeros((h, 1), dtype=np.float32)
+        self._max = np.zeros((h, 1), dtype=np.float32)
+        for i in range(h):
+            self._min[i] = np.min(fx_buffer[i, :])*0.8
+            self._max[i] = np.max(fx_buffer[i, :] - self._min[:, None])*0.8
+
+    def process(self, fx_buffer):
+        preprocessed = (fx_buffer - self._min) / self._max
+        fx_out = np.clip(preprocessed, 0, 1)
+        return fx_out

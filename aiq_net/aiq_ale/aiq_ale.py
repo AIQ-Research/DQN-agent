@@ -3,20 +3,26 @@ __author__ = 'vicident'
 from aiq_net.interfaces.ile import ILearningEnvironment
 from aiq_net.aiq_db.connectors import SqliteConnector
 import numpy as np
+from matplotlib import mlab
 
-from aiq_fx import UTCTimeIntervals, print_utc_time_interval, EASession, utc_ms_to_str
+from aiq_fx import UTCTimeIntervals, print_utc_time_interval, EASession, utc_ms_to_str, SessionPreprocessing
 
 
 # Two active threads meet here: trainer thread and market listener thread
 class FxLocalALE(ILearningEnvironment):
 
-    def __init__(self, db_path, window_wid, rng):
+    def __init__(self, db_path, image_wid, periods_list, rng):
         # fields
-        self._window_wid = window_wid
+        self._periods_list = periods_list
+        self._image_wid = image_wid
+        self._window_wid = np.max(self._periods_list) * self._image_wid
+        self._rng = rng
+        self._columns_include = ["EUR_GBP"]
         # set to zeros
         self._time_pointer = 0
+        self._begin_pointer = 0
         self._game_over = False
-        self._rng = rng
+        self._first_frame = True
         # init
         self._connect_fx_db_(db_path)
         self._check_time_periods_()
@@ -55,6 +61,7 @@ class FxLocalALE(ILearningEnvironment):
 
     def _read_time_intervals_(self):
         table_names = self.db.get_tables()
+        self._data_wid = len(table_names) * len(self._columns_include)
 
         # read time from the first table (table index doesn't matter, if _check_time_periods_ has been passed)
         time_column = self.db.read_table_column(table_names[0], 'time', 1)
@@ -63,7 +70,6 @@ class FxLocalALE(ILearningEnvironment):
 
         np_time_vector = np.array(time_column).reshape((self._time_ticks, 1))
         time_diff = np.diff(np_time_vector[:, 0])
-        print time_diff
 
         # find base (minimal) period of data changing (MS, SEC, MIN...)
         self._period = np.min(time_diff)
@@ -92,18 +98,56 @@ class FxLocalALE(ILearningEnvironment):
         self._time_matrix = np.concatenate((np_time_vector, session_vector), 1)
 
         # DEBUG
-        for i in range(self._time_ticks):
-           print utc_ms_to_str(self._time_matrix[i, 0]), "session:", self._time_matrix[i, 1]
+        # for i in range(self._time_ticks):
+        #   print utc_ms_to_str(self._time_matrix[i, 0]), "session:", self._time_matrix[i, 1]
+
+        self._begin_pointer = self._window_wid
+        self._time_pointer = self._begin_pointer
+        self.__rewind_to_session()
 
     def load_tge_from_json(self, json):
         pass
 
-    def act(self, action):
-        if self._time_pointer < self._time_ticks - 1:
+    # make an action
+    def __act(self):
+        return 0
+
+    # stop the game at the last moment of the session
+    def __finalize(self):
+        return 0
+
+    # rewind to the next playing time
+    def __rewind_to_session(self):
+        # rewind until end of the year
+        while not self._time_matrix[self._time_pointer, 1] and self._time_pointer < (self._time_ticks - 1):
             self._time_pointer += 1
-        else:
-            self._time_pointer = 0
+        # rewind until begin of the year
+        if self._time_pointer == self._time_ticks - 1:
+            self._time_pointer = self._begin_pointer
+            while not self._time_matrix[self._time_pointer, 1]:
+                self._time_pointer += 1
+        self._first_frame = True
+
+    def act(self, action):
+        reward = 0
+        if not self._time_matrix[self._time_pointer, 1]:
             self._game_over = True
+            self.__rewind_to_session()
+        else:
+            # play the game
+            reward = self.__act()
+
+            if self._time_pointer < self._time_ticks - 1:
+                self._time_pointer += 1
+            else:
+                self._time_pointer = self._begin_pointer
+                self.__rewind_to_session()
+                self._game_over = True
+
+        if self._game_over:
+            reward = self.__finalize()
+
+        return reward
 
     def game_over(self):
         return self._game_over
@@ -115,23 +159,49 @@ class FxLocalALE(ILearningEnvironment):
         pass
 
     def getScreenDims(self):
-        return self._data_len, int(self._window_wid / self._period)
+        return self._image_wid, self._image_wid
 
     def lives(self):
         pass
 
     # convert wide window to short window
     def getScreenGrayscale(self, screen_buffer):
-        self.fillBuffer(screen_buffer)
+        self.__fill_buffer(screen_buffer)
 
-    def fillBuffer(self, screen_buffer):
-        (h, w) = screen_buffer.shape
-        assert h == self._data_len and w == int(self._window_wid / self._period)
-        '''
-        screen_buffer[:, :] = self.db.read_tables_rows(
+    @staticmethod
+    def movingaverage (values, window):
+        weights = np.repeat(1.0, window)/window
+        sma = np.convolve(values, weights, 'valid')
+        return sma
+
+    def __preprocess_signal(self, buffer):
+        if self._first_frame:
+            self._session_prep = SessionPreprocessing(buffer)
+        buffer_prep = self._session_prep.process(buffer)
+        print buffer_prep
+        h, w = buffer_prep.shape
+        base = self._image_wid
+        frame = np.zeros((base, base, h), np.float32)
+        p = len(self._periods_list)
+        ps = base / p
+        for i in range(h):
+            cnt = 0
+            for j in self._periods_list:
+                cnt += 1
+                sma = self.movingaverage(buffer_prep[i, :], j)
+                frame[(cnt-1)*ps:cnt*ps, :, i] = sma[0:j*base:j]
+        return frame
+
+    def __fill_buffer(self, screen_buffer):
+        h, w = screen_buffer.shape
+        assert h == self._image_wid and w == self._image_wid
+
+        fx_buffer = self.db.read_tables_rows(
                 "time",
-               self._time_pointer,
-               self._time_pointer - (self._window_wid_in_period - 1) * self._period,
-               ["time"]
+               self._time_matrix[self._time_pointer - self._window_wid + 1, 0],
+               self._time_matrix[self._time_pointer, 0],
+               self._columns_include
         )
-        '''
+
+        buffer_prep = self.__preprocess_signal(fx_buffer)
+        screen_buffer[:, :] = buffer_prep[:, :, -1]

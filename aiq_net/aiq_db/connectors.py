@@ -64,16 +64,19 @@ class SqliteConnector(IDatabaseConnector):
 
         return sub_table
 
-    def read_table_rows(self, table_name, column_range, first_value, last_value, columns_exclude = []):
+    def read_table_rows(self, table_name, column_range, first_value, last_value, columns_include=None):
         columns = self.get_table_columns(table_name)
-        columns_read = [x for x in columns if x not in columns_exclude]
+        if columns_include is None:
+            columns_read = columns
+        else:
+            columns_read = [x for x in columns if x in columns_include]
         return self.read_table_range(table_name, columns_read, column_range, first_value, last_value)
 
-    def read_tables_rows(self, column_range, first_value, last_value, columns_exclude = []):
+    def read_tables_rows(self, column_range, first_value, last_value, columns_include=None):
         tables = self.get_tables()
         data = None
         for table_name in tables:
-            data_part = np.asarray(self.read_table_rows(table_name, column_range, first_value, last_value, columns_exclude))
+            data_part = np.asarray(self.read_table_rows(table_name, column_range, first_value, last_value, columns_include))
             n = len(data_part)
             if data is None and n > 0:
                 data = data_part

@@ -5,6 +5,7 @@ from aiq_net.aiq_db import connectors
 from aiq_net.aiq_ale.aiq_ale import FxLocalALE
 from aiq_network import AIQLearner
 from aiq_agent import AIQAgent
+import cv2
 
 import numpy as np
 from ale_data_set import floatX
@@ -41,14 +42,21 @@ def test_aiq_db(db_path):
     print columns
     db.close()
 
-def test_aiq_ale(db_path):
-    ale = FxLocalALE(db_path, 10)
-    (w, h) = ale.getScreenDims()
-    screen_buffer = np.zeros((w, h), dtype=floatX)
-    ale.fillBuffer(screen_buffer)
 
-    print screen_buffer
+def test_aiq_ale(db_path):
+    rng = np.random.RandomState(1234567)
+    ale = FxLocalALE(db_path, 64, [1, 5, 15, 30, 60, 120], rng)
+    ale._time_pointer += 8 * 60
+    h, w = ale.getScreenDims()
+    print "w:", w, "h:", h
+    screen_buffer = np.zeros((h, w), dtype=floatX)
+    ale.reset_game()
+    ale.getScreenGrayscale(screen_buffer)
+    img = np.asarray(screen_buffer*255, dtype=np.ubyte)
+    # debug
+    cv2.imwrite("data_frame.png", img)
+    print img
 
 if __name__ == '__main__':
     #test_aiq_agent()
-    test_aiq_ale('/home/vicident/Development/AIQ/db/fxpairs2012.db')
+    test_aiq_ale('/home/vicident/Development/data/fxpairs2008.db')
