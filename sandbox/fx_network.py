@@ -10,21 +10,13 @@ from keras.layers.embeddings import Embedding
 from keras.models import Model
 from keras.layers import Convolution2D, Dense, Flatten, Input, merge, Lambda, TimeDistributed
 from keras.optimizers import RMSprop, Adadelta, Adam
+import tensorflow as tf
 
-def fx_cnn_v0(agent, env, dropout=0, learning_rate=1e-3, **args):
-    S = Input(shape=[agent.input_dim])
-    #h = Reshape( agent.input_dim_orig )(S)
-    h = S
-    h = TimeDistributed( Convolution1D(16, 60, subsample_length=4, border_mode='same', activation='relu'))(h)
-    h = TimeDistributed( Convolution1D(32, 30, subsample_length=4, border_mode='same', activation='relu'))(h)
-    h = Flatten()(h)
-    h = Dense(256, activation='relu')(h)
-    V = Dense(env.action_space.n, activation='linear',init='zero')(h)
-    model = Model(S, V)
-    model.compile(loss='mse', optimizer=RMSprop(lr=learning_rate) )
-    return model
+K.set_learning_phase(1)
 
-def fx_cnn_v1(agent, env, dropout=0.5, **args):
+def fx_dnn_v0(agent, env, dropout=0.5, **args):
+  with tf.device("/cpu:0"):
+    state = tf.placeholder('float', [None, agent.input_dim])
     S = Input(shape=[agent.input_dim])
     h = Dense(1440, activation='relu', init='he_normal')(S)
     h = Dropout(dropout)(h)
@@ -32,5 +24,19 @@ def fx_cnn_v1(agent, env, dropout=0.5, **args):
     h = Dropout(dropout)(h)
     V = Dense(env.action_space.n, activation='linear',init='zero')(h)
     model = Model(S,V)
-    model.compile(loss='mse', optimizer=RMSprop(lr=args["learning_rate"]) )
-    return model
+    return state, model
+
+def fx_rnn_v0(agent, env, dropout=0.5, h0_width=64, h1_width=8, **args):
+  with tf.device("/gpu:0"):
+    state = tf.placeholder('float', [None, agent.input_dim])
+    S = Input(shape=[agent.input_dim])
+    h = Reshape([agent.nframes, agent.input_dim/agent.nframes])(S)
+    h = TimeDistributed(Dense(h0_width, activation='relu', init='he_normal'))(h)
+    h = Dropout(dropout)(h)
+    h = LSTM(h1_width, return_sequences=True)(h)
+    h = Dropout(dropout)(h)
+    h = LSTM(h1_width)(h)
+    h = Dropout(dropout)(h)
+    V = Dense(env.action_space.n, activation='linear',init='zero')(h)
+    model = Model(S,V)
+    return state, model
