@@ -56,6 +56,8 @@ class FxTrader(Env):
         self.frame_len = window_size
         self.data_len, self.frame_w = self.db.shape
         self.observation_space = Box(low=0.0, high=10000.0, shape=(self.frame_len, self.frame_w))
+	self.reward_range = (-contract, contract)
+        self.viewer = None
         self.db_pointer = self.frame_len
         self.fx_account = FxVerySimpleAccount(pip_margin, contract)
         print "Total ticks:", self.data_len, ", frame ticks:", self.frame_len, ", data width:", self.frame_w
@@ -89,11 +91,15 @@ class FxTrader(Env):
         return next_frame, reward, game_over, {}
 
     def _reset(self):
-        pass
+        next_frame, price, volume = self.__get_frame()
+	return next_frame
 
     def _render(self, mode='human', close=False):
         if close:
             return
+
+    def _configure(self):
+        pass
 
     def _seed(self, seed=None):
         return [1, 2, 3]
