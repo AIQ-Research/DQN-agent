@@ -52,15 +52,15 @@ class FxTrader(Env):
         # actions: 'buy', 'sell', 'do nothing'
         self.action_space = Discrete(4)
         # load all tables in dictionary of data frames (pandas)
-        self.db, self.tables_dict = self.__load_tables(base_path, pair_name)
+        self.db, self.tables_dict, self.data_len, self.frame_w = self.__load_tables(base_path, pair_name)
         self.frame_len = window_size
-        self.data_len, self.frame_w = self.db.shape
-        self.observation_space = Box(low=0.0, high=10000.0, shape=(self.frame_len, self.frame_w))
+        self.observation_space = Box(low=-contract, high=contract, shape=(self.frame_len, self.frame_w))
 	self.reward_range = (-contract, contract)
         self.viewer = None
         self.db_pointer = self.frame_len
         self.fx_account = FxVerySimpleAccount(pip_margin, contract)
         print "Total ticks:", self.data_len, ", frame ticks:", self.frame_len, ", data width:", self.frame_w
+	print self.__get_frame()
 
     def _close(self):
         pass
@@ -118,20 +118,26 @@ class FxTrader(Env):
         cdata = cursor.fetchall()
         table_names = [c[0] for c in cdata]
         # read tables data to data frames (pandas)
-        df_list = []
+        df_list = [pd.read_sql_query("SELECT time from " +  table_names[0], con)]
         for name in table_names:
             df_list.append(pd.read_sql_query("SELECT " + pair_name + " from " + name, con))
         con.close()
+ 	table_names = ["time"] + table_names
 
         # TODO: check correctness
         df = pd.concat(df_list, axis=1)
         df.columns = table_names
 
         tables_dict = dict(zip(table_names, range(len(table_names))))
+	h, w = df.shape
+        return df, tables_dict, h, w - 1
 
-        return df, tables_dict
+    def __rewind(self):
+	pass
 
     def __get_frame(self):
+	# rewind self.db_pointer to nearest pre-defined market session
+	self.__rewind()
         frame = self.db[(self.db_pointer - self.frame_len):self.db_pointer]
         return frame.as_matrix(), \
                frame.iloc[-1, self.tables_dict["CLOSE_PRICE"]], \
