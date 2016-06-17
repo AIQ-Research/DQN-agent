@@ -134,6 +134,10 @@ class FxTrader(Env):
         new_session = False
         while rewinding:
             self.db_pointer += 1
+            # check new cycle
+            if self.db_pointer >= self.data_len:
+                self.db_pointer = self.frame_len
+                new_session = True
             time_point_ms = self.db.iloc[self.db_pointer, self.tables_dict["time"]]
             # get current day
             day = MarketSession.ms_to_datetime(time_point_ms)
@@ -145,9 +149,6 @@ class FxTrader(Env):
             else:
                 rewinding = True
                 new_session = True
-            # check new cycle
-            if self.db_pointer >= self.data_len:
-                self.db_pointer = self.frame_len
 
         return new_session
 
