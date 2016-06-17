@@ -71,7 +71,7 @@ class FxTrader(Env):
         :param action:
         :return: observation, reward, game_over, comments
         """
-        next_frame, price, volume = self.__get_frame()
+        next_frame, price, volume, new_session = self.__get_frame()
         self.db_pointer += self.frame_len
 
         reward = 0
@@ -83,16 +83,12 @@ class FxTrader(Env):
         elif Order(action) == Order.SELL:
             self.fx_account.sell(price)
 
-        game_over = volume == 0.0
-
-        if self.db_pointer >= self.data_len:
-            self.db_pointer = self.frame_len
-            game_over = True
+        game_over = new_session
 
         return next_frame, reward, game_over, {}
 
     def _reset(self):
-        next_frame, price, volume = self.__get_frame()
+        next_frame, price, volume, new_session = self.__get_frame()
         return next_frame
 
     def _render(self, mode='human', close=False):
