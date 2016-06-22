@@ -12,7 +12,7 @@ from keras.layers import Convolution2D, Dense, Flatten, Input, merge, Lambda, Ti
 from keras.optimizers import RMSprop, Adadelta, Adam
 import tensorflow as tf
 
-K.set_learning_phase(1)
+K.set_learning_phase(True)
 
 def fx_dnn_v0(agent, env, dropout=0.5, **args):
   with tf.device("/cpu:0"):
@@ -27,7 +27,7 @@ def fx_dnn_v0(agent, env, dropout=0.5, **args):
     return state, model
 
 def fx_rnn_v0(agent, env, dropout=0.5, h0_width=64, h1_width=8, **args):
-  with tf.device("/gpu:0"):
+  with tf.device("/cpu:0"):
     state = tf.placeholder('float', [None, agent.input_dim])
     S = Input(shape=[agent.input_dim])
     h = Reshape([agent.nframes, agent.input_dim/agent.nframes])(S)
