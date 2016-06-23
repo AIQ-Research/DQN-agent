@@ -36,13 +36,13 @@ class BuyOrder(SLTPOrder):
         SLTPOrder.__init__(self, open_price, lot, sl, tp)
         self.slippage = slippage
 
-    def equity(self, spot_price):
+    def _equity(self, spot_price):
         return (spot_price - self.open_price - self.slippage) * self.lot
 
-    def check_sl(self, spot_price):
+    def _check_sl(self, spot_price):
         return self.open_price - spot_price - self.slippage >= self.sl
 
-    def check_tp(self, spot_price):
+    def _check_tp(self, spot_price):
         return spot_price - self.open_price - self.slippage >= self.tp
 
 
@@ -51,11 +51,11 @@ class SellOrder(SLTPOrder):
         SLTPOrder.__init__(self, open_price, lot, sl, tp)
         self.slippage = slippage
 
-    def equity(self, spot_price):
+    def _equity(self, spot_price):
         return (self.open_price - spot_price - self.slippage) * self.lot
 
-    def check_sl(self, spot_price):
+    def _check_sl(self, spot_price):
         return spot_price - self.open_price - self.slippage >= self.sl
 
-    def check_tp(self, spot_price):
+    def _check_tp(self, spot_price):
         return self.open_price - spot_price - self.slippage >= self.tp

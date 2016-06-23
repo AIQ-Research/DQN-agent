@@ -14,6 +14,7 @@ import tensorflow as tf
 
 K.set_learning_phase(True)
 
+
 def fx_dnn_v0(agent, env, dropout=0.5, **args):
   with tf.device("/cpu:0"):
     state = tf.placeholder('float', [None, agent.input_dim])
@@ -26,7 +27,8 @@ def fx_dnn_v0(agent, env, dropout=0.5, **args):
     model = Model(S,V)
     return state, model
 
-def fx_rnn_v0(agent, env, dropout=0.5, h0_width=64, h1_width=8, **args):
+
+def fx_rnn_v0(agent, env, dropout=0.0, h0_width=8, h1_width=8, **args):
   with tf.device("/cpu:0"):
     state = tf.placeholder('float', [None, agent.input_dim])
     S = Input(shape=[agent.input_dim])

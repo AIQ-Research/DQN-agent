@@ -12,14 +12,15 @@ from calendar import monthrange
 class FxBroker:
 
     def __init__(self, db_folder, pair_name, session):
-        self.db, self.tables, self.sessions = self.__load_tables("/".join([db_folder, "fxpairs2014.db"]), pair_name, session)
+        self.db, self.tables, self.sessions = FxBroker.__load_tables("/".join([db_folder, "fxpairs2014.db"]), pair_name, session)
         self.sessions_num = len(self.sessions)
         self.session_len = max([b-a for a, b in self.sessions])
         logging.info("max session length: {0}".format(self.session_len))
         self.db_pointer = 0
         self.session_pointer = 0
 
-    def __load_tables(self, db_path, pair_name, session):
+    @staticmethod
+    def __load_tables(db_path, pair_name, session):
         """
         :param db_path: path to historical data
         :param pair_name: name of currency exchange pair
@@ -36,6 +37,7 @@ class FxBroker:
         df_list = [pd.read_sql_query("SELECT time from " + table_names[0], con)]
         for name in table_names:
             df_list.append(pd.read_sql_query("SELECT " + pair_name + " from " + name, con))
+            logging.info("read " + name)
         con.close()
         table_names = ["time"] + table_names
 
@@ -145,7 +147,7 @@ class FxBroker2orders(FxBroker):
             self.balance -= self.lot
 
     def __sell(self, spot_price):
-        if self.sell_order in None:
+        if self.sell_order is None:
             self.sell_order = SellOrder(spot_price, self.lot, self.sl, self.tp)
             self.balance -= self.lot
 
@@ -157,7 +159,7 @@ class FxBroker2orders(FxBroker):
         last_frame = self._next_frame()
 
         if last_frame:
-            self._next_random_session(frame_len, seed)
+            self._next_random_session(seed, frame_len)
 
         return frame, last_frame
 
@@ -168,7 +170,7 @@ class FxBroker2orders(FxBroker):
     def step(self, action, frame_len, seed):
         frame, last_frame = self.__step(frame_len, seed)
 
-        spot_price = frame.ix[-1, 'CLOSE_PRICE']
+        spot_price = frame.iloc[-1, self.tables['CLOSE_PRICE']]
 
         total_reward = 0
         total_equity = self.balance

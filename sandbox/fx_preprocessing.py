@@ -6,12 +6,16 @@ import logging
 class FxPreprocessing:
 
     def __init__(self):
-        pass
+        self.init_flag = False
 
     def init(self, data_frame):
+        self.init_flag = True
         return self._init(data_frame)
 
     def process(self, data_frame):
+        if not self.init_flag:
+            self.init(data_frame)
+
         return self._process(data_frame)
 
     def get_range(self):
@@ -43,6 +47,7 @@ class FxSimpleNormalization(FxPreprocessing):
     def _process(self, data_frame):
         data_frame.sub(self.min_value, axis='columns')
         data_frame.div(self.divider, axis='columns')
+        return data_frame.ix[:, ['OPEN_PRICE', 'MIN_PRICE', 'MAX_PRICE', 'CLOSE_PRICE', 'VOLUME', 'CLOSE_PRICE']].as_matrix()
 
     def _get_range(self):
         return 0.0, 1.0

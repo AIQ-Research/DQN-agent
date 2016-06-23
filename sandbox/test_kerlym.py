@@ -18,8 +18,8 @@ my_broker = FxBroker2orders(db_folder='/Users/vicident/Development/hdata/',
                             session=EASession(),
                             balance=100000,
                             lot=10000,
-                            sl=0.1,
-                            tp=0.3)
+                            sl=0.01,
+                            tp=0.03)
 
 my_preprocessor = FxSimpleNormalization(border_gap=0.2)
 

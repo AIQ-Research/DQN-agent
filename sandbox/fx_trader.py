@@ -14,7 +14,6 @@ class FxTrader(Env):
         self.broker = broker
         self.frame_len = window_size
         self.frame_width = self.broker.get_frame_width()
-        self.game_over = True
         # variables for gym Env
         balance = broker.get_balance()
         min_value, max_value = self.preprocessor.get_range()
@@ -30,14 +29,17 @@ class FxTrader(Env):
         :param action:
         :return: observation, reward, game_over, comments
         """
-        next_frame, reward, self.game_over = self.broker.step(action, self.frame_len, self.seed())
-        if self.game_over:
+        next_frame, reward, game_over = self.broker.step(action, self.frame_len, self.seed())
+
+        if game_over:
             self.preprocessor.init(next_frame)
+
         prep_frame = self.preprocessor.process(next_frame)
-        return prep_frame, reward, self.game_over, {}
+        return prep_frame, reward, game_over, {}
 
     def _reset(self):
-        return self.broker.reset(self.frame_len, self.seed())
+        next_frame = self.broker.reset(self.frame_len, self.seed())
+        return self.preprocessor.process(next_frame)
 
     def _render(self, mode='human', close=False):
         if close:
