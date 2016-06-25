@@ -17,12 +17,13 @@ class FxLocalALE(ILearningEnvironment):
         self._image_wid = image_wid
         self._window_wid = np.max(self._periods_list) * self._image_wid
         self._rng = rng
-        self._columns_include = ["EUR_GBP"]
+        self._columns_include = ["EUR_USD"]
         # set to zeros
         self._time_pointer = 0
         self._begin_pointer = 0
         self._game_over = False
         self._first_frame = True
+        self._depth = 0
         # init
         self._connect_fx_db_(db_path)
         self._check_time_periods_()
@@ -34,6 +35,7 @@ class FxLocalALE(ILearningEnvironment):
 
     def _check_time_periods_(self):
         table_names = self.db.get_tables()
+        self._depth = len(table_names)
         base_time_column = []
         base_table_name = ''
 
@@ -108,6 +110,12 @@ class FxLocalALE(ILearningEnvironment):
     def load_tge_from_json(self, json):
         pass
 
+    def __buy_action(self):
+        pass
+
+    def __sell_action(self):
+        pass
+
     # make an action
     def __act(self):
         return 0
@@ -159,7 +167,7 @@ class FxLocalALE(ILearningEnvironment):
         pass
 
     def getScreenDims(self):
-        return self._image_wid, self._image_wid
+        return self._image_wid, self._image_wid, self._depth
 
     def lives(self):
         pass
@@ -178,7 +186,7 @@ class FxLocalALE(ILearningEnvironment):
         if self._first_frame:
             self._session_prep = SessionPreprocessing(buffer)
         buffer_prep = self._session_prep.process(buffer)
-        print buffer_prep
+
         h, w = buffer_prep.shape
         base = self._image_wid
         frame = np.zeros((base, base, h), np.float32)
@@ -193,7 +201,7 @@ class FxLocalALE(ILearningEnvironment):
         return frame
 
     def __fill_buffer(self, screen_buffer):
-        h, w = screen_buffer.shape
+        h, w, c = screen_buffer.shape
         assert h == self._image_wid and w == self._image_wid
 
         fx_buffer = self.db.read_tables_rows(
@@ -203,5 +211,4 @@ class FxLocalALE(ILearningEnvironment):
                self._columns_include
         )
 
-        buffer_prep = self.__preprocess_signal(fx_buffer)
-        screen_buffer[:, :] = buffer_prep[:, :, -1]
+        screen_buffer[:, :, :] = self.__preprocess_signal(fx_buffer)

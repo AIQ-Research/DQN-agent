@@ -135,9 +135,9 @@ class SessionPreprocessing:
         self._max = np.zeros((h, 1), dtype=np.float32)
         for i in range(h):
             self._min[i] = np.min(fx_buffer[i, :])*0.8
-            self._max[i] = np.max(fx_buffer[i, :] - self._min[:, None])*0.8
+            self._max[i] = np.max(fx_buffer[i, :])*1.2
 
     def process(self, fx_buffer):
-        preprocessed = (fx_buffer - self._min) / self._max
+        preprocessed = (fx_buffer - self._min) / (self._max - self._min)
         fx_out = np.clip(preprocessed, 0, 1)
         return fx_out

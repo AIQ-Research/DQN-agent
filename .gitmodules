@@ -1,3 +1,0 @@
-[submodule "deep_q_rl"]
-	path = deep_q_rl
-	url = https://github.com/spragunr/deep_q_rl.git

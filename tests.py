@@ -6,7 +6,8 @@ from aiq_net.aiq_ale.aiq_ale import FxLocalALE
 from aiq_network import AIQLearner
 from aiq_agent import AIQAgent
 import cv2
-
+import time
+import tensorflow as tf
 import numpy as np
 from ale_data_set import floatX
 
@@ -45,18 +46,24 @@ def test_aiq_db(db_path):
 
 def test_aiq_ale(db_path):
     rng = np.random.RandomState(1234567)
-    ale = FxLocalALE(db_path, 64, [1, 5, 15, 30, 60, 120], rng)
+    ale = FxLocalALE(db_path, 60, [1, 5, 15, 30, 60, 120], rng)
     ale._time_pointer += 8 * 60
-    h, w = ale.getScreenDims()
+    h, w, c = ale.getScreenDims()
     print "w:", w, "h:", h
-    screen_buffer = np.zeros((h, w), dtype=floatX)
+    screen_buffer = np.zeros((h, w, c), dtype=floatX)
     ale.reset_game()
-    ale.getScreenGrayscale(screen_buffer)
-    img = np.asarray(screen_buffer*255, dtype=np.ubyte)
+    show_id = 4
+    for i in xrange(1000):
+        for j in xrange(10):
+            ale.act(0)
+        ale.getScreenGrayscale(screen_buffer)
+        img = np.asarray(screen_buffer[:, :, show_id] * 255, dtype=np.ubyte)
+        cv2.imshow("graph", img)
+        cv2.waitKey(1)
+
     # debug
-    cv2.imwrite("data_frame.png", img)
-    print img
+    #cv2.imwrite("data_frame.png", img)
 
 if __name__ == '__main__':
     #test_aiq_agent()
-    test_aiq_ale('/home/vicident/Development/data/fxpairs2008.db')
+    test_aiq_ale('/Users/vicident/Development/hdata/fxpairs2008.db')

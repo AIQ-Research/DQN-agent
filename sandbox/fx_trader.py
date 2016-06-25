@@ -3,6 +3,8 @@ __author__ = 'vicident'
 from gym import Env
 from gym.spaces import Discrete, Box
 import random
+import logging
+
 
 MAX_SEED = 1234567890
 
@@ -15,7 +17,7 @@ class FxTrader(Env):
         self.frame_len = window_size
         self.frame_width = self.broker.get_frame_width()
         # variables for gym Env
-        balance = broker.get_balance()
+        balance = broker.get_volume()
         min_value, max_value = self.preprocessor.get_range()
         actions_num = broker.get_actions_num()
         self.observation_space = Box(low=min_value, high=max_value, shape=(self.frame_len, self.frame_width))
@@ -29,16 +31,16 @@ class FxTrader(Env):
         :param action:
         :return: observation, reward, game_over, comments
         """
-        next_frame, reward, game_over = self.broker.step(action, self.frame_len, self.seed())
+        next_frame, reward, game_over, session_over = self.broker.step(action, self.seed())
 
-        if game_over:
+        if session_over or game_over:
             self.preprocessor.init(next_frame)
 
         prep_frame = self.preprocessor.process(next_frame)
         return prep_frame, reward, game_over, {}
 
     def _reset(self):
-        next_frame = self.broker.reset(self.frame_len, self.seed())
+        next_frame = self.broker.reset(self.seed())
         return self.preprocessor.process(next_frame)
 
     def _render(self, mode='human', close=False):

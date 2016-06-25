@@ -55,7 +55,7 @@ class FxBroker:
 
         if close:
             # close all
-            logging.debug("market state:\n" + self.get_orders_snapshot().to_string())
+            logging.info("market state:\n" + self.get_orders_snapshot().to_string())
             call_orders = self.orders_table
         else:
             # choose take profit and stop loss

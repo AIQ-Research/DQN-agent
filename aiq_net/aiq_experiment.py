@@ -5,7 +5,7 @@ from ale_experiment import ALEExperiment
 from ale_data_set import floatX
 
 class AIQExperiment(ALEExperiment):
-    def __init__(self, ale, agent, resized_width, resized_height,
+    def __init__(self, ale, agent, resized_width, resized_height, depth,
                  resize_method, num_epochs, epoch_length, test_length,
                  frame_skip, death_ends_episode, max_start_nullops, rng):
 
@@ -14,9 +14,9 @@ class AIQExperiment(ALEExperiment):
                  frame_skip, death_ends_episode, max_start_nullops, rng)
 
         # change self.buffer_length and init screen_buffer
-
+        self.depth = depth
         self.screen_buffer = np.empty((self.buffer_length,
-                                       self.height, self.width),
+                                       self.height, self.width, self.depth),
                                       dtype=floatX)
 
 
