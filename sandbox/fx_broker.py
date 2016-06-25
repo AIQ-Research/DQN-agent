@@ -2,6 +2,7 @@ __author__ = 'vicident'
 
 import pandas as pd
 import sqlite3
+from datetime import datetime
 
 import logging
 from fx_session import MarketSession
@@ -55,7 +56,7 @@ class FxBroker:
 
         if close:
             # close all
-            logging.info("market state:\n" + self.get_orders_snapshot().to_string())
+            logging.debug("market state:\n" + self.get_orders_snapshot().to_string())
             call_orders = self.orders_table
         else:
             # choose take profit and stop loss
@@ -73,7 +74,15 @@ class FxBroker:
         return profit_loss
 
     def get_orders_snapshot(self):
-        return self.orders_table.copy(deep=True)
+        snapshot = self.orders_table.copy()
+        for index, row in snapshot.iterrows():
+            if row['TYPE'] == BUY_ORDER:
+                snapshot['TYPE'].loc[index] = 'buy'
+            elif row['TYPE'] == SELL_ORDER:
+                snapshot['TYPE'].loc[index] = 'sell'
+            sec = snapshot['OPEN_TIME'].loc[index] / 1000.0
+            snapshot['OPEN_TIME'].loc[index] = datetime.fromtimestamp(sec).strftime('%Y-%m-%d %H:%M')
+        return snapshot
 
 # methods for inheritors
 
@@ -238,7 +247,7 @@ class FxBroker2orders(FxBroker):
 
         if session_over:
             volume = self.get_volume()
-            logging.info("session has been closed with volume = " + str(volume))
+            logging.debug("session has been closed with volume = " + str(volume))
 
         # game is over if we have lost a much
         game_over = float(self.get_equity()) / float(self.get_start_volume()) < self.lose_rate
