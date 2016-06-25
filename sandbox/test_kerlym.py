@@ -14,12 +14,15 @@ root.setLevel(logging.INFO)
 from gym.envs.registration import register
 
 my_broker = FxBroker2orders(db_folder='/Users/vicident/Development/hdata/',
-                            pair_name='EUR_USD',
+                            frame_len=120,
+                            pair_name='AUD_USD',
                             session=EASession(),
-                            balance=100000,
+                            start_volume=100000,
                             lot=10000,
-                            sl=0.01,
-                            tp=0.03)
+                            sl_rate=0.01,
+                            tp_rate=0.03,
+                            lose_rate=0.98,
+                            slippage=0.005)
 
 my_preprocessor = FxSimpleNormalization(border_gap=0.2)
 

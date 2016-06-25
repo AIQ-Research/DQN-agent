@@ -1,6 +1,5 @@
 __author__ = 'vicident'
 
-from fx_order import BuyOrder, SellOrder
 import pandas as pd
 import sqlite3
 
@@ -8,16 +7,135 @@ import logging
 from fx_session import MarketSession
 from calendar import monthrange
 
+ORDERS_COLUMNS = ['TYPE', 'OPEN_TIME', 'OPEN_PRICE', 'VOLUME', 'SL_PRICE', 'TP_PRICE']
+SELL_ORDER = 1
+BUY_ORDER = -1
+
 
 class FxBroker:
 
-    def __init__(self, db_folder, pair_name, session):
+    def __init__(self, db_folder, pair_name, session, start_volume, slippage):
         self.db, self.tables, self.sessions = FxBroker.__load_tables("/".join([db_folder, "fxpairs2014.db"]), pair_name, session)
         self.sessions_num = len(self.sessions)
         self.session_len = max([b-a for a, b in self.sessions])
         logging.info("max session length: {0}".format(self.session_len))
         self.db_pointer = 0
         self.session_pointer = 0
+        # fin data
+        self.start_volume = start_volume
+        self.orders_table = pd.DataFrame(columns=ORDERS_COLUMNS)
+        self.volume = start_volume
+        self.slippage = slippage
+
+# public methods
+
+    def get_frame_width(self):
+        return len(self.tables)
+
+    def get_sessions_num(self):
+        return len(self.sessions)
+
+    def get_equity(self):
+        spot = self._get_spot()
+        op_col = self.orders_table['OPEN_PRICE']
+        sign_col = self.orders_table['TYPE']
+        vol_col = self.orders_table['VOLUME']
+        order_profits = ((op_col - spot).multiply(sign_col) + 1.0 - self.slippage).multiply(vol_col)
+
+        return order_profits.sum() + self.volume
+
+    def get_volume(self):
+        return self.volume
+
+    def get_start_volume(self):
+        return self.start_volume
+
+    def update_orders(self, close):
+        spot = self._get_spot()
+
+        if close:
+            # close all
+            logging.debug("market state:\n" + self.get_orders_snapshot().to_string())
+            call_orders = self.orders_table
+        else:
+            # choose take profit and stop loss
+            call_orders = self.orders_table[(self.orders_table['SL_PRICE'] >= spot) |
+                                        (self.orders_table['TP_PRICE'] <= spot)]
+        op_col = call_orders['OPEN_PRICE']
+        sign_col = call_orders['TYPE']
+        vol_col = call_orders['VOLUME']
+        order_profits = (op_col - spot).multiply(sign_col) - self.slippage
+        profit_loss = order_profits.multiply(vol_col).sum()
+
+        self.orders_table = self.orders_table.drop(call_orders.index)
+        self.volume += (order_profits + 1.0).multiply(vol_col).sum()
+        # profit given by orders
+        return profit_loss
+
+    def get_orders_snapshot(self):
+        return self.orders_table.copy(deep=True)
+
+# methods for inheritors
+
+    def _reset(self):
+        self.volume = self.start_volume
+        self.orders_table = pd.DataFrame(columns=ORDERS_COLUMNS)
+
+    def _get_spot(self):
+        return self.db.iloc[self.db_pointer, self.tables['CLOSE_PRICE']]
+
+    def _get_time(self):
+        return self.db.iloc[self.db_pointer, self.tables['TIME']]
+
+    def _get_volume(self):
+        return self.db.iloc[self.db_pointer, self.tables['VOLUME']]
+
+    def _add_order(self, order_type, lot, sl_rate, tp_rate):
+        if lot <= self.volume:
+            spot = self._get_spot()
+            time = self._get_time()
+            sp = len(self.orders_table.index)
+            self.orders_table.loc[sp] = [order_type, time, spot, lot, spot*(1 - sl_rate), spot*(1 + tp_rate)]
+            self.volume -= lot
+            return True
+        else:
+            return False
+
+    def _go_next_random_session(self, seed, frame_len):
+        start_session = frame_len / self.session_len + 1
+        self.session_pointer = seed % self.sessions_num
+        if self.session_pointer < start_session:
+            self.session_pointer = start_session
+        logging.info("go to random session: {0}".format(self.session_pointer))
+        self.db_pointer = self.sessions[self.session_pointer][0]
+
+    def _go_next_session(self, frame_len):
+        start_session = frame_len / self.session_len + 1
+        if self.session_pointer < self.sessions_num - 1:
+            self.session_pointer += 1
+        else:
+            self.session_pointer = start_session
+        self.db_pointer = self.sessions[self.session_pointer][0]
+
+    def _go_first_session(self, frame_len):
+        start_session = frame_len / self.session_len + 1
+        self.session_pointer = start_session
+        self.db_pointer = self.sessions[self.session_pointer][0]
+
+    def _go_next_frame(self):
+        if self.db_pointer < self.sessions[self.session_pointer][1] - 1:
+            self.db_pointer += 1
+            last_frame_flag = False
+        else:
+            last_frame_flag = True
+
+        return last_frame_flag
+
+    def _get_frame(self, frame_len):
+        frame = self.db[(self.db_pointer - frame_len):self.db_pointer]
+        return frame
+
+# private methods
 
     @staticmethod
     def __load_tables(db_path, pair_name, session):
@@ -39,7 +157,7 @@ class FxBroker:
             df_list.append(pd.read_sql_query("SELECT " + pair_name + " from " + name, con))
             logging.info("read " + name)
         con.close()
-        table_names = ["time"] + table_names
+        table_names = ["TIME"] + table_names
 
         df = pd.concat(df_list, axis=1)
         df.columns = table_names
@@ -50,14 +168,14 @@ class FxBroker:
         base_pointer = 0
         sessions = []
         while not stop:
-            time_point_ms = df.ix[base_pointer, 'time']
+            time_point_ms = df.ix[base_pointer, 'TIME']
             # get current day
             day = MarketSession.ms_to_datetime(time_point_ms)
             # get session's time limits for current day
             begin_ms, end_ms = session.get_session_range(day)
             # find time limits in database
-            begin_ids = df[df['time'] == begin_ms].index.tolist()
-            end_ids = df[df['time'] == end_ms + 1].index.tolist()
+            begin_ids = df[df['TIME'] == begin_ms].index.tolist()
+            end_ids = df[df['TIME'] == end_ms + 1].index.tolist()
             # there should be only single time point per each limit
             if len(begin_ids) == 1 and len(end_ids) == 1:
                 interval_len = end_ids[0] - begin_ids[0]
@@ -70,7 +188,7 @@ class FxBroker:
             _, max_days = monthrange(day.year, day.month)
 
             for i in xrange(1, max_days + 1):
-                next_point_ids = df[df['time'] == begin_ms + session.get_session_period()*i].index.tolist()
+                next_point_ids = df[df['TIME'] == begin_ms + session.get_session_period()*i].index.tolist()
                 if len(next_point_ids) == 1:
                     base_pointer = next_point_ids[0]
                     stop = False
@@ -80,123 +198,61 @@ class FxBroker:
 
         return df, tables_dict, sessions
 
-    def _next_random_session(self, seed, frame_len):
-        start_session = frame_len / self.session_len + 1
-        self.session_pointer = seed % self.sessions_num
-        if self.session_pointer < start_session:
-            self.session_pointer = start_session
-        logging.info("go to random session: {0}".format(self.session_pointer))
-        self.db_pointer = self.sessions[self.session_pointer][0]
-
-    def _next_session(self, frame_len):
-        start_session = frame_len / self.session_len + 1
-        if self.session_pointer < self.sessions_num - 1:
-            self.session_pointer += 1
-        else:
-            self.session_pointer = start_session
-        self.db_pointer = self.sessions[self.session_pointer][0]
-
-    def _first_session(self, frame_len):
-        start_session = frame_len / self.session_len + 1
-        self.session_pointer = start_session
-        self.db_pointer = self.sessions[self.session_pointer][0]
-
-    def _next_frame(self):
-        if self.db_pointer < self.sessions[self.session_pointer][1] - 1:
-            self.db_pointer += 1
-            last_frame_flag = False
-        else:
-            last_frame_flag = True
-
-        return last_frame_flag
-
-    def _get_frame(self, frame_len):
-        frame = self.db[(self.db_pointer - frame_len):self.db_pointer]
-        return frame
-
-    def get_frame_width(self):
-        return len(self.tables)
-
-    def get_sessions_num(self):
-        return len(self.sessions)
-
 
 class FxBroker2orders(FxBroker):
 
-    def __init__(self, db_folder, pair_name, session, balance, lot, sl, tp):
-        FxBroker.__init__(self, db_folder, pair_name, session)
-        self.balance = balance
-        self.sl = sl
-        self.tp = tp
+    def __init__(self, db_folder, frame_len, pair_name, session, start_volume, lot,
+                 sl_rate=0.01, tp_rate=0.03, lose_rate=0.5, slippage=0.005):
+
+        FxBroker.__init__(self, db_folder, pair_name, session, start_volume, slippage)
+        self.frame_len = frame_len
+        self.sl_rate = sl_rate
+        self.tp_rate = tp_rate
+        self.lose_rate = lose_rate
         self.lot = lot
-        self.buy_order = None
-        self.sell_order = None
-        self.init = False
         self.actions = {
             0: self.__nop,
             1: self.__buy,
             2: self.__sell
         }
+        self._go_first_session(self.frame_len)
 
-    def __nop(self, spot_price):
+    def __nop(self):
         pass
 
-    def __buy(self, spot_price):
-        if self.buy_order is None:
-            self.buy_order = BuyOrder(spot_price, self.lot, self.sl, self.tp)
-            self.balance -= self.lot
+    def __buy(self):
+        self._add_order(BUY_ORDER, self.lot, self.sl_rate, self.tp_rate)
 
-    def __sell(self, spot_price):
-        if self.sell_order is None:
-            self.sell_order = SellOrder(spot_price, self.lot, self.sl, self.tp)
-            self.balance -= self.lot
+    def __sell(self):
+        self._add_order(SELL_ORDER, self.lot, self.sl_rate, self.tp_rate)
 
-    def __step(self, frame_len, seed):
-        if not self.init:
-            self._first_session(frame_len)
-            self.init = True
-        frame = self._get_frame(frame_len)
-        last_frame = self._next_frame()
+    def reset(self, seed):
+        self._reset()
+        self._go_next_random_session(seed, self.frame_len)
+        return self._get_frame(self.frame_len)
 
-        if last_frame:
-            self._next_random_session(seed, frame_len)
+    def step(self, action, seed):
+        frame = self._get_frame(self.frame_len)
+        session_over = self._go_next_frame()
+        reward = self.update_orders(session_over)
 
-        return frame, last_frame
+        if session_over:
+            volume = self.get_volume()
+            logging.info("session has been closed with volume = " + str(volume))
 
-    def reset(self, frame_len, seed):
-        self._next_random_session(seed, frame_len)
-        return self._get_frame(frame_len)
+        # game is over if we have lost a much
+        game_over = float(self.get_equity()) / float(self.get_start_volume()) < self.lose_rate
 
-    def step(self, action, frame_len, seed):
-        frame, last_frame = self.__step(frame_len, seed)
+        # make an action if continue playing
+        if not game_over:
+            self.actions[action]()
+        else:
+            reward = self.update_orders(True)
+        # go to next session
+        if session_over and not game_over:
+            self._go_next_random_session(seed, self.frame_len)
 
-        spot_price = frame.iloc[-1, self.tables['CLOSE_PRICE']]
-
-        total_reward = 0
-        total_equity = self.balance
-
-        if self.buy_order is not None:
-            equity, reward, closed = self.buy_order.step(spot_price)
-            if closed:
-                self.buy_order = None
-                self.balance += equity
-            total_reward += reward
-            total_equity += equity
-
-        if self.sell_order is not None:
-            equity, reward, closed = self.sell_order.step(spot_price)
-            if closed:
-                self.sell_order = None
-                self.balance += equity
-            total_reward += reward
-            total_equity += equity
-
-        self.actions[action](spot_price)
-
-        return frame, total_reward, last_frame
-
-    def get_balance(self):
-        return self.balance
+        return frame, reward, game_over, session_over
 
     def get_actions_num(self):
         return len(self.actions.keys())
