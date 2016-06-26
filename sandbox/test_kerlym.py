@@ -14,6 +14,7 @@ root.setLevel(logging.INFO)
 from gym.envs.registration import register
 
 my_broker = FxBroker2orders(db_folder='/Users/vicident/Development/hdata/',
+                            db_list=["fxpairs2013.db", "fxpairs2014.db"],
                             frame_len=120,
                             pair_name='AUD_USD',
                             session=EASession(),

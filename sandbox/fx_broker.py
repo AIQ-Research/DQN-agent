@@ -1,5 +1,6 @@
 __author__ = 'vicident'
 
+import operator
 import pandas as pd
 import sqlite3
 from datetime import datetime
@@ -8,15 +9,22 @@ import logging
 from fx_session import MarketSession
 from calendar import monthrange
 
-ORDERS_COLUMNS = ['TYPE', 'OPEN_TIME', 'OPEN_PRICE', 'VOLUME', 'SL_PRICE', 'TP_PRICE']
-SELL_ORDER = 1
-BUY_ORDER = -1
-
 
 class FxBroker:
 
-    def __init__(self, db_folder, pair_name, session, start_volume, slippage):
-        self.db, self.tables, self.sessions = FxBroker.__load_tables("/".join([db_folder, "fxpairs2014.db"]), pair_name, session)
+    ORDERS_COLUMNS = ['TYPE', 'OPEN_TIME', 'OPEN_PRICE', 'VOLUME', 'SL_PRICE', 'TP_PRICE']
+    SELL_ORDER = 1
+    BUY_ORDER = -1
+    DB_TABLES = {'TIME': 0, 'OPEN_PRICE': 1, 'MIN_PRICE': 2, 'MAX_PRICE': 3, 'CLOSE_PRICE': 4, 'VOLUME': 5}
+
+    def __init__(self, db_folder, db_list, pair_name, session, start_volume, slippage):
+        data_frames_list = []
+        self.sessions = []
+        for db_name in db_list:
+            db, sess = FxBroker.__load_tables("/".join([db_folder, db_name]), pair_name, session)
+            data_frames_list.append(db)
+            self.sessions += sess
+        self.db = pd.concat(data_frames_list)
         self.sessions_num = len(self.sessions)
         self.session_len = max([b-a for a, b in self.sessions])
         logging.info("max session length: {0}".format(self.session_len))
@@ -24,14 +32,14 @@ class FxBroker:
         self.session_pointer = 0
         # fin data
         self.start_volume = start_volume
-        self.orders_table = pd.DataFrame(columns=ORDERS_COLUMNS)
+        self.orders_table = pd.DataFrame(columns=FxBroker.ORDERS_COLUMNS)
         self.volume = start_volume
         self.slippage = slippage
 
 # public methods
 
     def get_frame_width(self):
-        return len(self.tables)
+        return len(FxBroker.DB_TABLES)
 
     def get_sessions_num(self):
         return len(self.sessions)
@@ -76,9 +84,9 @@ class FxBroker:
     def get_orders_snapshot(self):
         snapshot = self.orders_table.copy()
         for index, row in snapshot.iterrows():
-            if row['TYPE'] == BUY_ORDER:
+            if row['TYPE'] == FxBroker.BUY_ORDER:
                 snapshot['TYPE'].loc[index] = 'buy'
-            elif row['TYPE'] == SELL_ORDER:
+            elif row['TYPE'] == FxBroker.SELL_ORDER:
                 snapshot['TYPE'].loc[index] = 'sell'
             sec = snapshot['OPEN_TIME'].loc[index] / 1000.0
             snapshot['OPEN_TIME'].loc[index] = datetime.fromtimestamp(sec).strftime('%Y-%m-%d %H:%M')
@@ -88,16 +96,16 @@ class FxBroker:
 
     def _reset(self):
         self.volume = self.start_volume
-        self.orders_table = pd.DataFrame(columns=ORDERS_COLUMNS)
+        self.orders_table = pd.DataFrame(columns=FxBroker.ORDERS_COLUMNS)
 
     def _get_spot(self):
-        return self.db.iloc[self.db_pointer, self.tables['CLOSE_PRICE']]
+        return self.db.iloc[self.db_pointer, FxBroker.DB_TABLES['CLOSE_PRICE']]
 
     def _get_time(self):
-        return self.db.iloc[self.db_pointer, self.tables['TIME']]
+        return self.db.iloc[self.db_pointer, FxBroker.DB_TABLES['TIME']]
 
     def _get_volume(self):
-        return self.db.iloc[self.db_pointer, self.tables['VOLUME']]
+        return self.db.iloc[self.db_pointer, FxBroker.DB_TABLES['VOLUME']]
 
     def _add_order(self, order_type, lot, sl_rate, tp_rate):
         if lot <= self.volume:
@@ -153,6 +161,8 @@ class FxBroker:
         :param pair_name: name of currency exchange pair
         :return:
         """
+        table_names_pairs = sorted(FxBroker.DB_TABLES.items(), key=operator.itemgetter(1))
+        logging.info("Loading " + db_path)
         # connect to sqlite database
         con = sqlite3.connect(db_path)
         # fetch table names
@@ -160,19 +170,22 @@ class FxBroker:
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
         cdata = cursor.fetchall()
         table_names = [c[0] for c in cdata]
+        # check database
+        for key, _ in table_names_pairs:
+            if key not in table_names and key is not 'TIME':
+                raise LookupError("Loaded database doesn't have required table: " + key)
         # read tables data to data frames (pandas)
-        df_list = [pd.read_sql_query("SELECT time from " + table_names[0], con)]
-        for name in table_names:
-            df_list.append(pd.read_sql_query("SELECT " + pair_name + " from " + name, con))
-            logging.info("read " + name)
+        df_list = [pd.read_sql_query("SELECT TIME from " + table_names[0], con)]
+        df_columns = []
+        for key, _ in table_names_pairs:
+            if key is not 'TIME':
+                df_list.append(pd.read_sql_query("SELECT " + pair_name + " from " + key, con))
+                logging.info(key + " has been read")
+            df_columns.append(key)
         con.close()
-        table_names = ["TIME"] + table_names
 
         df = pd.concat(df_list, axis=1)
-        df.columns = table_names
-
-        tables_dict = dict(zip(table_names, range(len(table_names))))
-
+        df.columns = df_columns
         stop = False
         base_pointer = 0
         sessions = []
@@ -205,15 +218,15 @@ class FxBroker:
                 else:
                     stop = True
 
-        return df, tables_dict, sessions
+        return df, sessions
 
 
 class FxBroker2orders(FxBroker):
 
-    def __init__(self, db_folder, frame_len, pair_name, session, start_volume, lot,
+    def __init__(self, db_folder, db_list, frame_len, pair_name, session, start_volume, lot,
                  sl_rate=0.01, tp_rate=0.03, lose_rate=0.5, slippage=0.005):
 
-        FxBroker.__init__(self, db_folder, pair_name, session, start_volume, slippage)
+        FxBroker.__init__(self, db_folder, db_list, pair_name, session, start_volume, slippage)
         self.frame_len = frame_len
         self.sl_rate = sl_rate
         self.tp_rate = tp_rate
@@ -230,10 +243,10 @@ class FxBroker2orders(FxBroker):
         pass
 
     def __buy(self):
-        self._add_order(BUY_ORDER, self.lot, self.sl_rate, self.tp_rate)
+        self._add_order(FxBroker.BUY_ORDER, self.lot, self.sl_rate, self.tp_rate)
 
     def __sell(self):
-        self._add_order(SELL_ORDER, self.lot, self.sl_rate, self.tp_rate)
+        self._add_order(FxBroker.SELL_ORDER, self.lot, self.sl_rate, self.tp_rate)
 
     def reset(self, seed):
         self._reset()
