@@ -42,12 +42,13 @@ class FxSimpleNormalization(FxPreprocessing):
         max_value = data_frame.max(axis=0)*(1 + self.border_gap)
         # (value - min_value)/(max_value - min_value)
         self.divider = max_value - self.min_value
-        logging.debug("min_value = {0}, divider = {1}".format(self.min_value, self.divider))
+        #logging.debug("min_value = {0}, divider = {1}".format(self.min_value, self.divider))
 
     def _process(self, data_frame):
-        data_frame.sub(self.min_value, axis='columns')
-        data_frame.div(self.divider, axis='columns')
-        return data_frame.ix[:, ['OPEN_PRICE', 'MIN_PRICE', 'MAX_PRICE', 'CLOSE_PRICE', 'VOLUME', 'CLOSE_PRICE']].as_matrix()
+        sub = data_frame.sub(self.min_value, axis='columns')
+        div = sub.div(self.divider, axis='columns')
+        res = div.ix[:, ['OPEN_PRICE', 'MIN_PRICE', 'MAX_PRICE', 'CLOSE_PRICE', 'VOLUME', 'CLOSE_PRICE']].as_matrix()
+        return res
 
     def _get_range(self):
         return 0.0, 1.0

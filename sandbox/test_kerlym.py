@@ -7,7 +7,7 @@ from fx_preprocessing import FxSimpleNormalization
 from fx_session import EASession
 
 root = logging.getLogger()
-root.setLevel(logging.INFO)
+root.setLevel(logging.DEBUG)
 
 #"/home/vicident/Development/data/fxpairs2014.db"
 #'/Users/vicident/Development/hdata/fxpairs2014.db'

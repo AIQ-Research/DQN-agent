@@ -4,11 +4,14 @@ import operator
 import pandas as pd
 import sqlite3
 from datetime import datetime
+import pytz
 
 import logging
 from fx_session import MarketSession
 from calendar import monthrange
+import uuid
 
+LONDON_TZ = pytz.timezone('Europe/London')
 
 class FxBroker:
 
@@ -89,8 +92,12 @@ class FxBroker:
             elif row['TYPE'] == FxBroker.SELL_ORDER:
                 snapshot['TYPE'].loc[index] = 'sell'
             sec = snapshot['OPEN_TIME'].loc[index] / 1000.0
-            snapshot['OPEN_TIME'].loc[index] = datetime.fromtimestamp(sec).strftime('%Y-%m-%d %H:%M')
+            london_dt = LONDON_TZ.localize(datetime.utcfromtimestamp(sec), is_dst=None)
+            snapshot['OPEN_TIME'].loc[index] = london_dt.strftime('%Y-%m-%d %H:%M')
         return snapshot
+
+    def close_order(self, index):
+        pass
 
 # methods for inheritors
 
@@ -110,13 +117,13 @@ class FxBroker:
     def _add_order(self, order_type, lot, sl_rate, tp_rate):
         if lot <= self.volume:
             spot = self._get_spot()
-            time = self._get_time()
-            sp = len(self.orders_table.index)
-            self.orders_table.loc[sp] = [order_type, time, spot, lot, spot*(1 - sl_rate), spot*(1 + tp_rate)]
+            open_time = self._get_time()
+            index = uuid.uuid4()
+            self.orders_table.loc[index] = [order_type, open_time, spot, lot, spot*(1 - sl_rate), spot*(1 + tp_rate)]
             self.volume -= lot
-            return True
+            return index
         else:
-            return False
+            return None
 
     def _go_next_random_session(self, seed, frame_len):
         start_session = frame_len / self.session_len + 1
