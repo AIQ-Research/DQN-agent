@@ -17,7 +17,7 @@ class FxTrader(Env):
         self.frame_len = window_size
         self.frame_width = self.broker.get_frame_width()
         # variables for gym Env
-        balance = broker.get_volume()
+        balance = broker.get_balance()
         min_value, max_value = self.preprocessor.get_range()
         actions_num = broker.get_actions_num()
         self.observation_space = Box(low=min_value, high=max_value, shape=(self.frame_len, self.frame_width))

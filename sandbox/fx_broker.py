@@ -1,4 +1,11 @@
 __author__ = 'vicident'
+__copyright__ = "Copyright 2016, AIQ-Research"
+__credits__ = ["Denis Timoshenko"]
+__license__ = "MIT"
+__version__ = "1.0.1"
+__maintainer__ = "Denis Timoshenko"
+__email__ = "tnediciv@gmail.com"
+__status__ = "Prototype"
 
 import operator
 import pandas as pd
@@ -12,19 +19,33 @@ from calendar import monthrange
 import uuid
 
 LONDON_TZ = pytz.timezone('Europe/London')
+"""London's timezone for time output"""
 
-class FxBroker:
+
+class FxSingleCurrencyBroker:
 
     ORDERS_COLUMNS = ['TYPE', 'OPEN_TIME', 'OPEN_PRICE', 'VOLUME', 'SL_PRICE', 'TP_PRICE']
+    """Table of orders"""
     SELL_ORDER = 1
+    """Type definition of the sell order"""
     BUY_ORDER = -1
+    """Type definition of the buy order"""
     DB_TABLES = {'TIME': 0, 'OPEN_PRICE': 1, 'MIN_PRICE': 2, 'MAX_PRICE': 3, 'CLOSE_PRICE': 4, 'VOLUME': 5}
+    """Required tables of database"""
 
-    def __init__(self, db_folder, db_list, pair_name, session, start_volume, slippage):
+    def __init__(self, db_folder, db_list, pair_name, session, start_balance, slippage):
+        """Constructor
+        :param db_folder: folder contains databases
+        :param db_list: list of databases' names
+        :param pair_name: name of the trading currency pair
+        :param session: market session for trading
+        :param start_balance: start balance in volume units
+        :param slippage: order's slippage (constant value)
+        """
         data_frames_list = []
         self.sessions = []
         for db_name in db_list:
-            db, sess = FxBroker.__load_tables("/".join([db_folder, db_name]), pair_name, session)
+            db, sess = FxSingleCurrencyBroker.__load_tables("/".join([db_folder, db_name]), pair_name, session)
             data_frames_list.append(db)
             self.sessions += sess
         self.db = pd.concat(data_frames_list)
@@ -34,35 +55,53 @@ class FxBroker:
         self.db_pointer = 0
         self.session_pointer = 0
         # fin data
-        self.start_volume = start_volume
-        self.orders_table = pd.DataFrame(columns=FxBroker.ORDERS_COLUMNS)
-        self.volume = start_volume
+        self.start_balance = start_balance
+        self.orders_table = pd.DataFrame(columns=FxSingleCurrencyBroker.ORDERS_COLUMNS)
+        self.balance = start_balance
         self.slippage = slippage
 
-# public methods
-
-    def get_frame_width(self):
-        return len(FxBroker.DB_TABLES)
+    @staticmethod
+    def get_frame_width():
+        """Return generated frame width
+        :return: width of data frame
+        """
+        return len(FxSingleCurrencyBroker.DB_TABLES)
 
     def get_sessions_num(self):
+        """Return number of available sessions
+        :return: number of sessions
+        """
         return len(self.sessions)
 
     def get_equity(self):
+        """Return trader's equity
+        :return: equity (as a volume of the base currency)
+        """
         spot = self._get_spot()
         op_col = self.orders_table['OPEN_PRICE']
         sign_col = self.orders_table['TYPE']
         vol_col = self.orders_table['VOLUME']
         order_profits = ((op_col - spot).multiply(sign_col) + 1.0 - self.slippage).multiply(vol_col)
 
-        return order_profits.sum() + self.volume
+        return order_profits.sum() + self.balance
 
-    def get_volume(self):
-        return self.volume
+    def get_balance(self):
+        """Return actual balance of the trader
+        :return: actual balance (in volume units)
+        """
+        return self.balance
 
-    def get_start_volume(self):
-        return self.start_volume
+    def get_start_balance(self):
+        """Return start balance of the trader
+        :return: start balance (in volume units)
+        """
+        return self.start_balance
 
     def update_orders(self, close):
+        """Update state of orders
+        :param close: close flag (force close all orders if True)
+        :return: instant profit-loss of the orders
+        """
         spot = self._get_spot()
 
         if close:
@@ -76,20 +115,24 @@ class FxBroker:
         op_col = call_orders['OPEN_PRICE']
         sign_col = call_orders['TYPE']
         vol_col = call_orders['VOLUME']
-        order_profits = (op_col - spot).multiply(sign_col) - self.slippage
-        profit_loss = order_profits.multiply(vol_col).sum()
+        orders_profits = (op_col - spot).multiply(sign_col) - self.slippage
+        # profit given by orders
+        profit_loss = orders_profits.multiply(vol_col).sum()
 
         self.orders_table = self.orders_table.drop(call_orders.index)
-        self.volume += (order_profits + 1.0).multiply(vol_col).sum()
-        # profit given by orders
+        self.balance += (orders_profits + 1.0).multiply(vol_col).sum()
+
         return profit_loss
 
     def get_orders_snapshot(self):
+        """Return human-friendly instant snapshot of the orders table
+        :return: pandas data frame of the orders
+        """
         snapshot = self.orders_table.copy()
         for index, row in snapshot.iterrows():
-            if row['TYPE'] == FxBroker.BUY_ORDER:
+            if row['TYPE'] == FxSingleCurrencyBroker.BUY_ORDER:
                 snapshot['TYPE'].loc[index] = 'buy'
-            elif row['TYPE'] == FxBroker.SELL_ORDER:
+            elif row['TYPE'] == FxSingleCurrencyBroker.SELL_ORDER:
                 snapshot['TYPE'].loc[index] = 'sell'
             sec = snapshot['OPEN_TIME'].loc[index] / 1000.0
             london_dt = LONDON_TZ.localize(datetime.utcfromtimestamp(sec), is_dst=None)
@@ -97,56 +140,98 @@ class FxBroker:
         return snapshot
 
     def close_order(self, index):
-        pass
-
-# methods for inheritors
+        raise NotImplementedError
 
     def _reset(self):
-        self.volume = self.start_volume
-        self.orders_table = pd.DataFrame(columns=FxBroker.ORDERS_COLUMNS)
+        """Reset trading
+        :return: final balance of previous trading period
+        """
+        final_balance = self.balance
+        self.balance = self.start_balance
+        self.orders_table = pd.DataFrame(columns=FxSingleCurrencyBroker.ORDERS_COLUMNS)
+        return final_balance
 
     def _get_spot(self):
-        return self.db.iloc[self.db_pointer, FxBroker.DB_TABLES['CLOSE_PRICE']]
+        """Return current spot price
+        :return: instant spot price
+        """
+        return self.db.iloc[self.db_pointer, FxSingleCurrencyBroker.DB_TABLES['CLOSE_PRICE']]
 
     def _get_time(self):
-        return self.db.iloc[self.db_pointer, FxBroker.DB_TABLES['TIME']]
+        """Return current market time
+        :return: instant market time
+        """
+        return self.db.iloc[self.db_pointer, FxSingleCurrencyBroker.DB_TABLES['TIME']]
 
     def _get_volume(self):
-        return self.db.iloc[self.db_pointer, FxBroker.DB_TABLES['VOLUME']]
+        """Return current volume of trading
+        :return: instant volume of trading
+        """
+        return self.db.iloc[self.db_pointer, FxSingleCurrencyBroker.DB_TABLES['VOLUME']]
 
     def _add_order(self, order_type, lot, sl_rate, tp_rate):
-        if lot <= self.volume:
+        """Put order in orders table
+        :param order_type: sell (FxSingleCurrencyBroker.SELL_ORDER) or buy (FxSingleCurrencyBroker.BUY_ORDER)
+        :param lot: volume of the order
+        :param sl_rate: stop-loss rate
+        :param tp_rate: take-profit rate
+        :return: index of created order (if accepted) or None (if declined)
+        """
+        if order_type not in [FxSingleCurrencyBroker.SELL_ORDER, FxSingleCurrencyBroker.BUY_ORDER]:
+            raise AttributeError('incorrect type of order')
+
+        # should have enough money on actual balance
+        if lot <= self.balance:
             spot = self._get_spot()
             open_time = self._get_time()
             index = uuid.uuid4()
             self.orders_table.loc[index] = [order_type, open_time, spot, lot, spot*(1 - sl_rate), spot*(1 + tp_rate)]
-            self.volume -= lot
+            self.balance -= lot
             return index
         else:
             return None
 
     def _go_next_random_session(self, seed, frame_len):
+        """Jump to the random session from available list of sessions
+        :param seed: random generators output
+        :param frame_len: length of the regression frame
+        :return: new session pointer
+        """
         start_session = frame_len / self.session_len + 1
         self.session_pointer = seed % self.sessions_num
         if self.session_pointer < start_session:
             self.session_pointer = start_session
         logging.info("go to random session: {0}".format(self.session_pointer))
         self.db_pointer = self.sessions[self.session_pointer][0]
+        return self.session_pointer
 
     def _go_next_session(self, frame_len):
+        """Jump to the next session
+        :param frame_len: length of the regression frame
+        :return: new session pointer
+        """
         start_session = frame_len / self.session_len + 1
         if self.session_pointer < self.sessions_num - 1:
             self.session_pointer += 1
         else:
             self.session_pointer = start_session
         self.db_pointer = self.sessions[self.session_pointer][0]
+        return self.session_pointer
 
     def _go_first_session(self, frame_len):
+        """Jump to the first session
+        :param frame_len: length of the regression frame
+        :return: new session pointer
+        """
         start_session = frame_len / self.session_len + 1
         self.session_pointer = start_session
         self.db_pointer = self.sessions[self.session_pointer][0]
+        return self.session_pointer
 
     def _go_next_frame(self):
+        """Move pointer to the next data frame (like a tick of the market)
+        :return: True if current frame is the last frame in current session (False - otherwise)
+        """
         if self.db_pointer < self.sessions[self.session_pointer][1] - 1:
             self.db_pointer += 1
             last_frame_flag = False
@@ -156,19 +241,21 @@ class FxBroker:
         return last_frame_flag
 
     def _get_frame(self, frame_len):
+        """Return current regression frame (current database point minus frame_len)
+        :param frame_len:
+        :return: regression frame with the shape (frame_len, self.get_frame_width())
+        """
         frame = self.db[(self.db_pointer - frame_len):self.db_pointer]
         return frame
-
-# private methods
 
     @staticmethod
     def __load_tables(db_path, pair_name, session):
         """
-        :param db_path: path to historical data
+        :param db_path: path to historical database
         :param pair_name: name of currency exchange pair
-        :return:
+        :return: data frame of time, prices and volume, sessions list
         """
-        table_names_pairs = sorted(FxBroker.DB_TABLES.items(), key=operator.itemgetter(1))
+        table_names_pairs = sorted(FxSingleCurrencyBroker.DB_TABLES.items(), key=operator.itemgetter(1))
         logging.info("Loading " + db_path)
         # connect to sqlite database
         con = sqlite3.connect(db_path)
@@ -228,12 +315,12 @@ class FxBroker:
         return df, sessions
 
 
-class FxBroker2orders(FxBroker):
+class FxBroker2orders(FxSingleCurrencyBroker):
 
     def __init__(self, db_folder, db_list, frame_len, pair_name, session, start_volume, lot,
                  sl_rate=0.01, tp_rate=0.03, lose_rate=0.5, slippage=0.005):
 
-        FxBroker.__init__(self, db_folder, db_list, pair_name, session, start_volume, slippage)
+        FxSingleCurrencyBroker.__init__(self, db_folder, db_list, pair_name, session, start_volume, slippage)
         self.frame_len = frame_len
         self.sl_rate = sl_rate
         self.tp_rate = tp_rate
@@ -250,10 +337,10 @@ class FxBroker2orders(FxBroker):
         pass
 
     def __buy(self):
-        self._add_order(FxBroker.BUY_ORDER, self.lot, self.sl_rate, self.tp_rate)
+        self._add_order(FxSingleCurrencyBroker.BUY_ORDER, self.lot, self.sl_rate, self.tp_rate)
 
     def __sell(self):
-        self._add_order(FxBroker.SELL_ORDER, self.lot, self.sl_rate, self.tp_rate)
+        self._add_order(FxSingleCurrencyBroker.SELL_ORDER, self.lot, self.sl_rate, self.tp_rate)
 
     def reset(self, seed):
         self._reset()
@@ -266,11 +353,11 @@ class FxBroker2orders(FxBroker):
         reward = self.update_orders(session_over)
 
         if session_over:
-            volume = self.get_volume()
-            logging.debug("session has been closed with volume = " + str(volume))
+            balance = self.get_balance()
+            logging.debug("session has been closed with the balance = " + str(balance))
 
         # game is over if we have lost a much
-        game_over = float(self.get_equity()) / float(self.get_start_volume()) < self.lose_rate
+        game_over = float(self.get_equity()) / float(self.get_start_balance()) < self.lose_rate
 
         # make an action if continue playing
         if not game_over:
