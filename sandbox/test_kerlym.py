@@ -2,7 +2,7 @@ __author__ = 'vicident'
 
 import logging
 from fx_network import fx_dnn_v0, fx_rnn_v0
-from fx_broker import FxBroker2orders
+from fx_strategy import FxStrategyTwoOrders
 from fx_preprocessing import FxSimpleNormalization
 from fx_session import EASession
 
@@ -13,7 +13,7 @@ root.setLevel(logging.DEBUG)
 #'/Users/vicident/Development/hdata/fxpairs2014.db'
 from gym.envs.registration import register
 
-my_broker = FxBroker2orders(db_folder='/Users/vicident/Development/hdata/',
+my_strategy = FxStrategyTwoOrders(db_folder='/Users/vicident/Development/hdata/',
                             db_list=["fxpairs2013.db", "fxpairs2014.db"],
                             frame_len=120,
                             pair_name='AUD_USD',
@@ -30,7 +30,7 @@ my_preprocessor = FxSimpleNormalization(border_gap=0.2)
 register(
     id='Fxtrader-v0',
     entry_point='fx_trader:FxTrader',
-    kwargs={'window_size': 120, 'broker': my_broker, 'preprocessor': my_preprocessor},
+    kwargs={'window_size': 120, 'strategy': my_strategy, 'preprocessor': my_preprocessor},
     timestep_limit=200,
     reward_threshold=0.99,  # optimum = 1
 )

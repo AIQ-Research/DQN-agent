@@ -47,7 +47,7 @@ class FxSimpleNormalization(FxPreprocessing):
     def _process(self, data_frame):
         sub = data_frame.sub(self.min_value, axis='columns')
         div = sub.div(self.divider, axis='columns')
-        res = div.ix[:, ['OPEN_PRICE', 'MIN_PRICE', 'MAX_PRICE', 'CLOSE_PRICE', 'VOLUME', 'CLOSE_PRICE']].as_matrix()
+        res = div.ix[:, ['OPEN_PRICE', 'MIN_PRICE', 'MAX_PRICE', 'CLOSE_PRICE', 'VOLUME']].as_matrix()
         return res
 
     def _get_range(self):

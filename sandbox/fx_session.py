@@ -1,4 +1,11 @@
 __author__ = 'vicident'
+__copyright__ = "Copyright 2016, AIQ-Research"
+__credits__ = ["Denis Timoshenko"]
+__license__ = "MIT"
+__version__ = "1.0.1"
+__maintainer__ = "Denis Timoshenko"
+__email__ = "tnediciv@gmail.com"
+__status__ = "Prototype"
 
 from datetime import time, timedelta, datetime
 
@@ -18,10 +25,10 @@ class MarketSession:
         return datetime.utcfromtimestamp(ms/1000)
 
     def get_session_range(self, day):
-        '''
+        """
         :param day:
         :return:
-        '''
+        """
         session_start = datetime.combine(day, self._time_begin)
         session_end = datetime.combine(day, self._time_end)
 
