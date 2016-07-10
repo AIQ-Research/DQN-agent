@@ -97,32 +97,55 @@ class FxSingleCurrencyBroker(object):
         """
         return self.start_balance
 
-    def update_orders(self, close):
-        """Update state of orders
-        :param close: close flag (force close all orders if True)
-        :return: instant profit-loss of the orders
+    def __update_orders(self, spot, orders_to_update):
         """
-        spot = self._get_spot()
-
-        if close:
-            # close all
-            logging.debug("market state:\n" + self.get_orders_snapshot().to_string())
-            call_orders = self.orders_table
-        else:
-            # choose take profit and stop loss
-            call_orders = self.orders_table[(self.orders_table['SL_PRICE'] >= spot) |
-                                        (self.orders_table['TP_PRICE'] <= spot)]
-        op_col = call_orders['OPEN_PRICE']
-        sign_col = call_orders['TYPE']
-        vol_col = call_orders['VOLUME']
+        :param spot:
+        :param orders_to_update:
+        :return:
+        """
+        op_col = orders_to_update['OPEN_PRICE']
+        sign_col = orders_to_update['TYPE']
+        vol_col = orders_to_update['VOLUME']
         orders_profits = (op_col - spot).multiply(sign_col) - self.slippage
         # profit given by orders
         profit_loss = orders_profits.multiply(vol_col).sum()
 
-        self.orders_table = self.orders_table.drop(call_orders.index)
+        self.orders_table = self.orders_table.drop(orders_to_update.index)
         self.balance += (orders_profits + 1.0).multiply(vol_col).sum()
 
         return profit_loss
+
+    def update_orders(self, close):
+        """Update state of orders
+        :param close: close flag (force close all orders if True)
+        :return: instant profit-loss of the orders, lists of indices of stop loss and take profit orders
+        """
+        spot = self._get_spot()
+        profit_loss = 0
+
+        if close:
+            # close all
+            logging.debug("market state:\n" + self.get_orders_snapshot().to_string())
+            call_orders_sl = []
+            call_orders_tp = []
+            call_orders = self.orders_table
+        else:
+            # choose take profit and stop loss
+            call_orders_sl_buy = self.orders_table[(self.orders_table['SL_PRICE'] >= spot) &
+                                               (self.orders_table['TYPE'] == self.BUY_ORDER)]
+            call_orders_sl_sell = self.orders_table[(self.orders_table['SL_PRICE'] <= spot) &
+                                               (self.orders_table['TYPE'] == self.SELL_ORDER)]
+            call_orders_sl = pd.concat([call_orders_sl_buy, call_orders_sl_sell])
+            profit_loss += self.__update_orders(spot, call_orders_sl)
+
+            call_orders_tp_buy = self.orders_table[(self.orders_table['TP_PRICE'] <= spot) &
+                                                (self.orders_table['TYPE'] == self.BUY_ORDER)]
+            call_orders_tp_sell = self.orders_table[(self.orders_table['TP_PRICE'] >= spot) &
+                                                (self.orders_table['TYPE'] == self.SELL_ORDER)]
+            call_orders_tp = pd.concat([call_orders_tp_buy, call_orders_tp_sell])
+            profit_loss += self.__update_orders(spot, call_orders_tp)
+
+        return profit_loss, call_orders_sl.index, call_orders_tp.index
 
     def get_orders_snapshot(self):
         """Return human-friendly instant snapshot of the orders table
@@ -139,8 +162,11 @@ class FxSingleCurrencyBroker(object):
             snapshot['OPEN_TIME'].loc[index] = london_dt.strftime('%Y-%m-%d %H:%M')
         return snapshot
 
-    def close_order(self, index):
-        raise NotImplementedError
+    def get_active_orders_num(self):
+        """Return an amount of opened orders
+        :return: opened orders count
+        """
+        return len(self.orders_table.index)
 
     def _reset(self):
         """Reset trading
@@ -185,7 +211,11 @@ class FxSingleCurrencyBroker(object):
             spot = self._get_spot()
             open_time = self._get_time()
             index = uuid.uuid4()
-            self.orders_table.loc[index] = [order_type, open_time, spot, lot, spot*(1 - sl_rate), spot*(1 + tp_rate)]
+            if order_type == self.SELL_ORDER:
+                self.orders_table.loc[index] = [order_type, open_time, spot, lot, spot*(1 + sl_rate), spot*(1 - tp_rate)]
+            elif order_type == self.BUY_ORDER:
+                self.orders_table.loc[index] = [order_type, open_time, spot, lot, spot*(1 - sl_rate), spot*(1 + tp_rate)]
+
             self.balance -= lot
             return index
         else:
