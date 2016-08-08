@@ -21,7 +21,7 @@ class FxStrategyBase(object):
         raise NotImplementedError
 
     @abc.abstractmethod
-    def strategy(self, action):
+    def strategy(self, action, sl_list_call, tp_list_call):
         raise NotImplementedError
 
 
@@ -46,7 +46,9 @@ class FxStrategySingleCurrency(FxStrategyBase, FxSingleCurrencyBroker):
     def step(self, action, seed):
         frame = self._get_frame(self.frame_len)
         session_over = self._go_next_frame()
-        reward, sl_list, tp_list = self.update_orders(session_over)
+        reward, sl_list_call, tp_list_call = self.update_orders(session_over)
+        #logging.debug("sl_list_call: {0}".format(sl_list_call))
+        #logging.debug("tp_list_call: {0}".format(tp_list_call))
 
         if session_over:
             balance = self.get_balance()
@@ -57,7 +59,7 @@ class FxStrategySingleCurrency(FxStrategyBase, FxSingleCurrencyBroker):
 
         # make an action if continue playing
         if not game_over:
-            self.strategy(action)
+            self.strategy(action, sl_list_call, tp_list_call)
         else:
             reward, _, _ = self.update_orders(True)
         # go to next session
@@ -88,15 +90,13 @@ class FxStrategyTwoOrders(FxStrategySingleCurrency):
 
     def __buy(self):
         oid = self._add_order(FxSingleCurrencyBroker.BUY_ORDER, self.lot, self.sl_rate, self.tp_rate)
-        #logging.debug("BUY opened with ID: {0}".format(oid))
         return oid
 
     def __sell(self):
         oid = self._add_order(FxSingleCurrencyBroker.SELL_ORDER, self.lot, self.sl_rate, self.tp_rate)
-        #logging.debug("SELL opened with ID: {0}".format(oid))
         return oid
 
-    def strategy(self, action):
+    def strategy(self, action, sl_list_call, tp_list_call):
         self.actions[action]()
 
     def get_actions_num(self):
@@ -129,13 +129,49 @@ class FxStrategyRollover(FxStrategySingleCurrency):
     def __turn_off(self):
         self.strategy_on = False
 
-    def strategy(self, action):
+    def strategy(self, action, sl_list_call, tp_list_call):
         spot = self._get_spot()
 
         if not self.get_active_orders_num():
             pass
 
+    def get_actions_num(self):
+        return len(self.actions.keys())
 
+
+class FxStrategyTestBroker(FxStrategySingleCurrency):
+
+    def __init__(self, db_folder, db_list, frame_len, pair_name, session, start_volume=100000,
+                 lot=10000, sl_rate=0.01, tp_rate=0.03, lose_rate=0.5, slippage=0.005, base_rate=0.01):
+
+        FxStrategySingleCurrency.__init__(self, db_folder, db_list, frame_len, pair_name, session, start_volume,
+                                          lot, sl_rate, tp_rate, lose_rate, slippage)
+        self.strategy_on = False
+        self.base_rate = base_rate
+        self.base_spot = self._get_spot()
+        self.order = self.SELL_ORDER
+        self.actions = {
+            0: self.__buy,
+            1: self.__sell
+        }
+
+    def __nop(self):
+        pass
+
+    def __buy(self):
+        oid = self._add_order(FxSingleCurrencyBroker.BUY_ORDER, self.lot, self.sl_rate, self.tp_rate)
+        return oid
+
+    def __sell(self):
+        oid = self._add_order(FxSingleCurrencyBroker.SELL_ORDER, self.lot, self.sl_rate, self.tp_rate)
+        return oid
+
+    def strategy(self, action, sl_list_call, tp_list_call):
+        spot = self._get_spot()
+        if spot == 1.0:
+            self.actions[0]()
+        else:
+            self.actions[1]()
 
     def get_actions_num(self):
         return len(self.actions.keys())

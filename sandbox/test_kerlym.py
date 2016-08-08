@@ -1,10 +1,10 @@
 __author__ = 'vicident'
 
 import logging
-from fx_network import fx_dnn_v0, fx_rnn_v0
-from fx_strategy import FxStrategyTwoOrders
-from fx_preprocessing import FxSimpleNormalization
-from fx_session import EASession
+from sandbox.fx_network import fx_dnn_v0, fx_rnn_v0
+from sandbox.fx_strategy import FxStrategyTwoOrders
+from sandbox.fx_preprocessing import FxSimpleNormalization
+from sandbox.fx_session import EASession
 
 root = logging.getLogger()
 root.setLevel(logging.DEBUG)
