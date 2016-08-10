@@ -131,9 +131,9 @@ class FxStrategyRollover(FxStrategySingleCurrency):
 
     def strategy(self, action, sl_list_call, tp_list_call):
         spot = self._get_spot()
-        # buy or sell
+        # buy or sell side  of last closed position by stop loss
         position_side=self._get_side_position()
-        # current time of closed position
+        # current time of last closed position by stop loss
         current_time =self._get_current_time()
         if not self.get_active_orders_num():
             pass
@@ -144,11 +144,11 @@ class FxStrategyRollover(FxStrategySingleCurrency):
             # recalculation of position lot
             lost_sum=(self.sl_rate+self.slippage)*self.lot
             self.lot= (lost_sum+self.tp_rate*self.lot)/self.tp_rate
-
+            # if it was  closed sell position by stop loss  we open buy  position
             if position_side == 2:
                     oid = self._add_order(FxSingleCurrencyBroker.BUY_ORDER, self.lot,  self.sl_rate,  self.tp_rate)
                     return  oid
-
+            # if it was  closed buy  position by stop loss  we open sell position
             if position_side == 1:
                     oid = self._add_order(FxSingleCurrencyBroker.SELL_ORDER, self.lot, self.sl_rate, self.tp_rate)
                     return oid
