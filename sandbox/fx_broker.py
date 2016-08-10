@@ -10,7 +10,7 @@ __status__ = "Prototype"
 import operator
 import pandas as pd
 import sqlite3
-from datetime import datetime
+from datetime import datetime, date, timedelta
 import pytz
 
 import logging
@@ -44,14 +44,21 @@ class FxSingleCurrencyBroker(object):
         """
         data_frames_list = []
         self.sessions = []
-        for db_name in db_list:
-            db, sess = FxSingleCurrencyBroker.__load_tables("/".join([db_folder, db_name]), pair_name, session)
+        if len(db_list):
+            for db_name in db_list:
+                db, sess = FxSingleCurrencyBroker.__load_tables("/".join([db_folder, db_name]), pair_name, session)
+                data_frames_list.append(db)
+                self.sessions += sess
+        else:
+            db, sess = FxSingleCurrencyBroker.__load_fake_tables(session)
             data_frames_list.append(db)
             self.sessions += sess
+
         self.db = pd.concat(data_frames_list)
         self.sessions_num = len(self.sessions)
         self.session_len = max([b-a for a, b in self.sessions])
         logging.info("max session length: {0}".format(self.session_len))
+        logging.info("#sessions: {0}".format(self.sessions_num))
         self.db_pointer = 0
         self.session_pointer = 0
         # fin data
@@ -122,13 +129,14 @@ class FxSingleCurrencyBroker(object):
         """
         spot = self._get_spot()
         profit_loss = 0
+        call_orders_sl = []
+        call_orders_tp = []
 
         if close:
             # close all
             logging.debug("market state:\n" + self.get_orders_snapshot().to_string())
-            call_orders_sl = []
-            call_orders_tp = []
             call_orders = self.orders_table
+            profit_loss += self.__update_orders(spot, call_orders)
         else:
             # choose take profit and stop loss
             call_orders_sl_buy = self.orders_table[(self.orders_table['SL_PRICE'] >= spot) &
@@ -279,6 +287,47 @@ class FxSingleCurrencyBroker(object):
         return frame
 
     @staticmethod
+    def __split_sessions(df, session_type):
+        """
+        :param df: pandas data frame with currency exchange rates
+        :param session_type: type of session (Europe/Asia/America)
+        :return: list of extracted sessions
+        """
+        stop = False
+        base_pointer = 0
+        sessions = []
+        while not stop:
+            time_point_ms = df.ix[base_pointer, 'TIME']
+            # get current day
+            day = MarketSession.ms_to_datetime(time_point_ms)
+            # get session's time limits for current day
+            begin_ms, end_ms = session_type.get_session_range(day)
+            # find time limits in database
+            begin_ids = df[df['TIME'] == begin_ms].index.tolist()
+            end_ids = df[df['TIME'] == end_ms + 1].index.tolist()
+            # there should be only single time point per each limit
+            if len(begin_ids) == 1 and len(end_ids) == 1:
+                interval_len = end_ids[0] - begin_ids[0]
+                volumes = df.ix[(interval_len/4 + begin_ids[0]):(3*interval_len/4 + begin_ids[0]), 'VOLUME']
+                prices = df.ix[(interval_len/4 + begin_ids[0]):(3*interval_len/4 + begin_ids[0]), 'CLOSE_PRICE']
+                # check real trading activity
+                if volumes.sum() and prices.max() != prices.min():
+                    sessions.append((begin_ids[0], end_ids[0] - 1))
+
+            _, max_days = monthrange(day.year, day.month)
+
+            for i in xrange(1, max_days + 1):
+                next_point_ids = df[df['TIME'] == begin_ms + session_type.get_session_period()*i].index.tolist()
+                if len(next_point_ids) == 1:
+                    base_pointer = next_point_ids[0]
+                    stop = False
+                    break
+                else:
+                    stop = True
+
+        return sessions
+
+    @staticmethod
     def __load_tables(db_path, pair_name, session):
         """
         :param db_path: path to historical database
@@ -310,36 +359,28 @@ class FxSingleCurrencyBroker(object):
 
         df = pd.concat(df_list, axis=1)
         df.columns = df_columns
-        stop = False
-        base_pointer = 0
-        sessions = []
-        while not stop:
-            time_point_ms = df.ix[base_pointer, 'TIME']
-            # get current day
-            day = MarketSession.ms_to_datetime(time_point_ms)
-            # get session's time limits for current day
-            begin_ms, end_ms = session.get_session_range(day)
-            # find time limits in database
-            begin_ids = df[df['TIME'] == begin_ms].index.tolist()
-            end_ids = df[df['TIME'] == end_ms + 1].index.tolist()
-            # there should be only single time point per each limit
-            if len(begin_ids) == 1 and len(end_ids) == 1:
-                interval_len = end_ids[0] - begin_ids[0]
-                volumes = df.ix[(interval_len/4 + begin_ids[0]):(3*interval_len/4 + begin_ids[0]), 'VOLUME']
-                prices = df.ix[(interval_len/4 + begin_ids[0]):(3*interval_len/4 + begin_ids[0]), 'CLOSE_PRICE']
-                # check real trading activity
-                if volumes.sum() and prices.max() != prices.min():
-                    sessions.append((begin_ids[0], end_ids[0] - 1))
 
-            _, max_days = monthrange(day.year, day.month)
+        return df, FxSingleCurrencyBroker.__split_sessions(df, session)
 
-            for i in xrange(1, max_days + 1):
-                next_point_ids = df[df['TIME'] == begin_ms + session.get_session_period()*i].index.tolist()
-                if len(next_point_ids) == 1:
-                    base_pointer = next_point_ids[0]
-                    stop = False
-                    break
-                else:
-                    stop = True
+    @staticmethod
+    def __load_fake_tables(session):
+        df = pd.DataFrame([], columns=['TIME', 'OPEN_PRICE', 'MIN_PRICE', 'MAX_PRICE', 'CLOSE_PRICE', 'VOLUME'])
+        sessions_num = 12
+        today = date.today()
+        t = 0
+        for s in xrange(sessions_num):
+            dt = datetime.combine(today + timedelta(days=s), datetime.min.time())
+            while dt.time() < datetime(dt.year, dt.month, dt.day, hour=23, minute=59, second=0).time():
+                price = 1 + t % 2
+                data_row = [MarketSession.datetime_to_ms(dt), price, price, price, price, 1.0]
+                df.loc[t] = data_row
+                dt += timedelta(minutes=1)
+                t += 1
+            data_row = [MarketSession.datetime_to_ms(dt), price, price, price, price, 1.0]
+            df.loc[t] = data_row
 
-        return df, sessions
+        return df, FxSingleCurrencyBroker.__split_sessions(df, session)
+
+
+
+

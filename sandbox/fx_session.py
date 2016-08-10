@@ -24,6 +24,12 @@ class MarketSession:
     def ms_to_datetime(ms):
         return datetime.utcfromtimestamp(ms/1000)
 
+    def get_time_begin(self):
+        return self._time_begin
+
+    def get_time_end(self):
+        return self._time_end
+
     def get_session_range(self, day):
         """
         :param day:
