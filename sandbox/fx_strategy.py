@@ -3,7 +3,7 @@ __author__ = 'vicident'
 import abc
 from fx_broker import FxSingleCurrencyBroker
 import logging
-
+import datetime
 
 class FxStrategyBase(object):
     ___metaclass__ = abc.ABCMeta
@@ -28,15 +28,16 @@ class FxStrategyBase(object):
 class FxStrategySingleCurrency(FxStrategyBase, FxSingleCurrencyBroker):
 
     def __init__(self, db_folder, db_list, frame_len, pair_name, session,
-                 start_volume, lot, sl_rate, tp_rate, lose_rate, slippage):
+                 start_volume, lot, sl_rate, tp_rate, lose_rate, slippage, lost_sum):
 
-        FxSingleCurrencyBroker.__init__(self, db_folder, db_list, pair_name, session, start_volume, slippage)
+        FxSingleCurrencyBroker.__init__(self, db_folder, db_list, pair_name, session, start_volume, slippage,lost_sum)
         self.frame_len = frame_len
         self.sl_rate = sl_rate
         self.tp_rate = tp_rate
         self.lose_rate = lose_rate
         self.lot = lot
         self._go_first_session(self.frame_len)
+        self.lost_sum=lost_sum
 
     def reset(self, seed):
         self._reset()
@@ -73,10 +74,10 @@ class FxStrategySingleCurrency(FxStrategyBase, FxSingleCurrencyBroker):
 class FxStrategyTwoOrders(FxStrategySingleCurrency):
 
     def __init__(self, db_folder, db_list, frame_len, pair_name, session, start_volume=100000,
-                 lot=10000, sl_rate=0.02, tp_rate=0.06, lose_rate=0.5, slippage=0.005):
+                 lot=10000, sl_rate=0.02, tp_rate=0.06, lose_rate=0.5, slippage=0.005,lost_sum=0.0):
 
         FxStrategySingleCurrency.__init__(self, db_folder, db_list, frame_len, pair_name, session, start_volume,
-                                          lot, sl_rate, tp_rate, lose_rate, slippage)
+                                          lot, sl_rate, tp_rate, lose_rate, slippage,lost_sum)
         self.actions = {
             0: self.__nop,
             1: self.__buy,
@@ -106,10 +107,10 @@ class FxStrategyTwoOrders(FxStrategySingleCurrency):
 class FxStrategyRollover(FxStrategySingleCurrency):
 
     def __init__(self, db_folder, db_list, frame_len, pair_name, session, start_volume=100000,
-                 lot=10000, sl_rate=0.01, tp_rate=0.03, lose_rate=0.5, slippage=0.005, base_rate=0.01):
+                 lot=10000, sl_rate=0.01, tp_rate=0.03, lose_rate=0.5, slippage=0.005, base_rate=0.01,lost_sum=0.0):
 
         FxStrategySingleCurrency.__init__(self, db_folder, db_list, frame_len, pair_name, session, start_volume,
-                                          lot, sl_rate, tp_rate, lose_rate, slippage)
+                                          lot, sl_rate, tp_rate, lose_rate, slippage,lost_sum)
         self.strategy_on = False
         self.base_rate = base_rate
         self.base_spot = self._get_spot()
@@ -131,11 +132,22 @@ class FxStrategyRollover(FxStrategySingleCurrency):
 
     def strategy(self, action):
         spot = self._get_spot()
-
+        position_side=self._get_side_position()
+        current_time =self._get_current_time()
         if not self.get_active_orders_num():
             pass
 
+        # beginning of european and american session
+        if current_time.hour()>=7 and current_time.hour()<19:
+            self.lost_sum=self.lost_sum+(self.sl_rate+self.slippage)*self.lot
+            self.lot= self.lost_sum+(1+ 0.01)/self.tp_rate
 
+            if position_side == 2:
+                    oid = self._add_order(FxSingleCurrencyBroker.BUY_ORDER, self.lot,  self.sl_rate,  self.tp_rate)
+                    return  oid
 
+            if position_side == 1:
+                    oid = self._add_order(FxSingleCurrencyBroker.SELL_ORDER, self.lot, self.sl_rate,  self.tp_rate)
+                    return  oid
     def get_actions_num(self):
         return len(self.actions.keys())
